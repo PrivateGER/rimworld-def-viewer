@@ -1,14 +1,15 @@
+use anyhow::Result;
+use chrono::Utc;
+use clap::{Arg, Command};
+use quick_xml::events::Event;
+use quick_xml::Reader;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
-use anyhow::Result;
-use clap::{Arg, Command};
-use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
-use quick_xml::events::Event;
-use quick_xml::Reader;
-use serde_json::json;
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -493,11 +494,20 @@ impl DefParser {
 
 struct DatasetGenerator {
     defs: Vec<RimWorldDef>,
+    rimworld_path: String,
 }
 
 impl DatasetGenerator {
-    fn new(defs: Vec<RimWorldDef>) -> Result<Self> {
-        Ok(Self { defs })
+    fn new(defs: Vec<RimWorldDef>, rimworld_path: String) -> Result<Self> {
+        Ok(Self { defs, rimworld_path })
+    }
+
+    fn read_game_version(&self) -> String {
+        let version_path = Path::new(&self.rimworld_path).join("Version.txt");
+        match fs::read_to_string(version_path) {
+            Ok(content) => content.trim().to_string(),
+            Err(_) => "Unknown".to_string(),
+        }
     }
 
     fn generate_dataset_file(&self) -> Result<()> {
@@ -563,7 +573,9 @@ impl DatasetGenerator {
             "stats": {
                 "total_defs": stats.total_defs,
                 "total_categories": stats.total_categories,
-                "total_files": stats.total_files
+                "total_files": stats.total_files,
+                "game_version": stats.game_version,
+                "generated_at": stats.generated_at
             }
         });
         
@@ -654,10 +666,15 @@ impl DatasetGenerator {
             categories.insert(&def.def_type);
         }
 
+        let game_version = self.read_game_version();
+        let generated_at = Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+
         Stats {
             total_defs: self.defs.len(),
             total_categories: categories.len(),
             total_files: files.len(),
+            game_version,
+            generated_at,
         }
     }
 }
@@ -667,6 +684,8 @@ struct Stats {
     total_defs: usize,
     total_categories: usize,
     total_files: usize,
+    game_version: String,
+    generated_at: String,
 }
 
 fn main() -> Result<()> {
@@ -704,7 +723,7 @@ fn main() -> Result<()> {
     parser.scan_defs_directory()?;
     
     println!("\nCreating HTML generator...");
-    let generator = DatasetGenerator::new(parser.parsed_defs)?;
+    let generator = DatasetGenerator::new(parser.parsed_defs, rimworld_path.clone())?;
     println!("  ✓ Generator initialized");
 
     generator.generate_dataset_file()?;
