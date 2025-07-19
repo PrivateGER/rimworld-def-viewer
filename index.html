@@ -1,0 +1,1455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RimWorld XML Documentation</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fzstd@0.1.1/umd/index.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* Colors */
+            --primary-color: #2563eb;
+            --primary-hover: #1d4ed8;
+            --secondary-color: #64748b;
+            --accent: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            
+            /* Background */
+            --background: #ffffff;
+            --background-alt: #f8fafc;
+            --surface: #ffffff;
+            
+            /* Text */
+            --text: #0f172a;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            
+            /* Borders & Effects */
+            --border: #e2e8f0;
+            --border-radius: 0.5rem;
+            --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            --transition: all 0.2s ease;
+            
+            /* Layout */
+            --sidebar-width: 300px;
+            --navbar-height: 60px;
+            --content-padding: 2rem;
+            
+            /* Breakpoints */
+            --mobile-breakpoint: 768px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: var(--text);
+            background: var(--background);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .app-layout {
+            display: flex;
+            min-height: 100vh;
+        }
+        
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            overflow-y: auto;
+            z-index: 100;
+            box-shadow: var(--shadow);
+        }
+        
+        .sidebar-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border);
+            background: var(--background-alt);
+        }
+        
+        .sidebar-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 0.5rem;
+        }
+        
+        .sidebar-subtitle {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .nav-links {
+            list-style: none;
+            padding: 1rem 0;
+        }
+        
+        .nav-links li {
+            margin: 0;
+        }
+
+        .nav-links a {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            padding: 0.75rem 1.5rem;
+            transition: var(--transition);
+            font-weight: 500;
+            font-size: 0.875rem;
+            border-left: 3px solid transparent;
+            cursor: pointer;
+        }
+
+        .nav-links a:hover {
+            background: var(--background-alt);
+            color: var(--primary-color);
+            border-left-color: var(--primary-color);
+        }
+        
+        .nav-links a.active {
+            background: var(--primary-color);
+            color: white;
+            border-left-color: var(--primary-hover);
+        }
+
+        .main-content {
+            flex: 1;
+            margin-left: var(--sidebar-width);
+            min-height: 100vh;
+        }
+
+        .content-container {
+            padding: var(--content-padding);
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
+            color: white;
+            padding: 2rem 0;
+            position: relative;
+            overflow: hidden;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="2" fill="white" opacity="0.1"/></svg>') repeat;
+            background-size: 40px 40px;
+        }
+
+        .header-content {
+            position: relative;
+            z-index: 1;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .stats {
+            display: flex;
+            gap: 2rem;
+            margin-top: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .stat {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 0.75rem 1.5rem;
+            border-radius: var(--border-radius);
+            backdrop-filter: blur(10px);
+        }
+
+        .stat-number {
+            font-size: 1.5rem;
+            font-weight: 600;
+            display: block;
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            opacity: 0.8;
+        }
+
+        .search-container {
+            margin: 2rem 0;
+            position: relative;
+            background: var(--surface);
+            padding: 1.5rem;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 1rem 1.5rem 1rem 3rem;
+            border: 2px solid var(--border);
+            border-radius: var(--border-radius);
+            font-size: 1rem;
+            transition: var(--transition);
+            background: var(--surface);
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 2.5rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 1.2rem;
+        }
+
+        .filters {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            padding: 0.5rem;
+            background: var(--background-alt);
+            border-radius: var(--border-radius);
+            border: 1px solid var(--border);
+        }
+
+        .filter-group label {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .filter-btn {
+            padding: 0.5rem 1rem;
+            background: var(--background-alt);
+            border: 1px solid var(--border);
+            border-radius: var(--border-radius);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: var(--transition);
+            font-size: 0.875rem;
+        }
+
+        .filter-btn:hover,
+        .filter-btn.active {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        .def-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .def-item {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--border-radius);
+            padding: 1.5rem;
+            transition: var(--transition);
+            position: relative;
+            cursor: pointer;
+        }
+
+        .def-item:hover {
+            box-shadow: var(--shadow-lg);
+            transform: translateY(-2px);
+            border-color: var(--primary-color);
+        }
+        
+        .def-item.expanded {
+            box-shadow: var(--shadow-lg);
+            border-color: var(--primary-color);
+        }
+
+        .def-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .def-name {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .def-type {
+            background: var(--primary-color);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .extension-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .extension-badge.core {
+            background: #64748b;
+            color: white;
+        }
+
+        .extension-badge.royalty {
+            background: #7c3aed;
+            color: white;
+        }
+
+        .extension-badge.ideology {
+            background: #059669;
+            color: white;
+        }
+
+        .extension-badge.biotech {
+            background: #dc2626;
+            color: white;
+        }
+
+        .extension-badge.anomaly {
+            background: #7c2d12;
+            color: white;
+        }
+
+        .extension-badge.odyssey {
+            background: #0891b2;
+            color: white;
+        }
+
+        .extension-badge.unknown {
+            background: var(--text-muted);
+            color: white;
+        }
+
+        .def-description {
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            line-height: 1.5;
+        }
+
+        .tags {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+        }
+
+        .tag {
+            display: inline-block;
+            background: var(--background-alt);
+            color: var(--text-secondary);
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .tag.abstract {
+            background: var(--warning);
+            color: white;
+        }
+
+        .tag.parent {
+            background: var(--accent);
+            color: white;
+        }
+
+        .sidebar-filter-info {
+            margin-top: 0.5rem;
+            font-size: 0.75rem;
+            color: var(--warning);
+        }
+        
+        .category-header {
+            margin-bottom: 2rem;
+        }
+        
+        .category-title {
+            font-size: 1.75rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .category-count {
+            color: var(--text-secondary);
+        }
+        
+        .def-label {
+            font-style: italic;
+            color: var(--text-muted);
+            margin-left: auto;
+        }
+        
+        .def-parent {
+            margin-bottom: 1rem;
+        }
+        
+        .def-parent-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+        
+        .def-parent-name {
+            font-size: 0.875rem;
+            color: var(--text);
+        }
+        
+        .file-path {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 1rem;
+            word-break: break-all;
+        }
+        
+        .def-details {
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--border);
+        }
+        
+        .reference-section {
+            margin-bottom: 1rem;
+        }
+        
+        .reference-section h4 {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+        
+        .reference-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        
+        .reference-item {
+            background: var(--background-alt);
+            padding: 0.25rem 0.75rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            color: var(--primary-color);
+            cursor: pointer;
+            transition: var(--transition);
+            border: 1px solid var(--border);
+        }
+        
+        .reference-item:hover {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+        
+        .code-reference-item {
+            background: #1e1e1e;
+            color: #9cdcfe;
+            padding: 0.25rem 0.75rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-family: 'Courier New', monospace;
+            transition: var(--transition);
+            border: 1px solid var(--border);
+            display: inline-block;
+        }
+        
+        .code-reference-item:hover {
+            background: #2d2d2d;
+            border-color: #9cdcfe;
+        }
+        
+        .ref-type-badge {
+            background: var(--primary-color);
+            color: white;
+            padding: 0.125rem 0.5rem;
+            border-radius: 0.75rem;
+            font-size: 0.625rem;
+            font-weight: 500;
+            margin-left: 0.5rem;
+            opacity: 0.8;
+        }
+        
+        .no-references {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-style: italic;
+        }
+        
+        .expand-indicator {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--background-alt);
+            border-radius: 50%;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            transition: var(--transition);
+        }
+
+        .xml-section {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: var(--background-alt);
+            border-radius: var(--border-radius);
+            border: 1px solid var(--border);
+        }
+
+        .xml-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        /* Button Styles */
+        .xml-toggle,
+        .xml-copy {
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: var(--transition);
+            color: white;
+        }
+        
+        .xml-toggle {
+            background: var(--primary-color);
+        }
+
+        .xml-toggle:hover {
+            background: var(--primary-hover);
+        }
+
+        .xml-copy {
+            background: var(--secondary-color);
+            color: white;
+            margin-left: 0.5rem;
+        }
+
+        .xml-copy:hover {
+            background: var(--text-secondary);
+        }
+
+        .xml-display {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 1rem;
+            border-radius: var(--border-radius);
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            line-height: 1.4;
+            white-space: pre;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+        }
+
+        .xml-display .xml-tag {
+            color: #569cd6;
+        }
+
+        .xml-display .xml-attr {
+            color: #9cdcfe;
+        }
+
+        .xml-display .xml-value {
+            color: #ce9178;
+        }
+
+        .xml-display .xml-content {
+            color: #d4d4d4;
+        }
+        
+        .xml-display .xml-class-value {
+            color: #4ec9b0;
+            font-weight: 500;
+        }
+        
+        .xml-display .xml-comment {
+            color: #608b4e;
+            font-style: italic;
+        }
+        
+        .xml-display .xml-cdata {
+            color: #d7ba7d;
+            background-color: rgba(215, 186, 125, 0.1);
+            padding: 0 2px;
+        }
+        
+        .xml-display .xml-declaration {
+            color: #c586c0;
+            font-weight: 500;
+        }
+        
+        .def-item:hover .expand-indicator {
+            background: var(--primary-color);
+            color: white;
+        }
+        
+        .def-item.expanded .expand-indicator {
+            transform: rotate(180deg);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-secondary);
+        }
+
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid var(--border);
+            border-top: 4px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--danger);
+        }
+
+        .results-counter {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: var(--primary-color);
+            color: white;
+            padding: 0.75rem 1.25rem;
+            border-radius: var(--border-radius);
+            font-size: 0.875rem;
+            box-shadow: var(--shadow-lg);
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+        }
+
+        /* Mobile Navbar */
+        .mobile-navbar {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: var(--navbar-height);
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            z-index: 1000;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 1rem;
+            box-shadow: var(--shadow);
+        }
+        
+        .mobile-navbar-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+        
+        .mobile-menu-toggle {
+            background: none;
+            border: none;
+            color: var(--text);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: var(--border-radius);
+            transition: var(--transition);
+        }
+        
+        .mobile-menu-toggle:hover {
+            background: var(--background-alt);
+        }
+        
+        .mobile-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 99;
+            backdrop-filter: blur(2px);
+        }
+        
+        .mobile-overlay.active {
+            display: block;
+        }
+
+        /* Mobile Responsive Design */
+        @media (max-width: 768px) {
+            /* Show mobile navbar */
+            .mobile-navbar {
+                display: flex;
+            }
+            
+            /* Adjust sidebar for mobile */
+            .sidebar {
+                transform: translateX(-100%);
+                transition: transform 0.3s ease;
+                top: var(--navbar-height);
+                height: calc(100vh - var(--navbar-height));
+            }
+            
+            .sidebar.open {
+                transform: translateX(0);
+            }
+            
+            /* Adjust main content */
+            .main-content {
+                margin-left: 0;
+                padding-top: var(--navbar-height);
+            }
+            
+            /* Responsive content adjustments */
+            .content-container {
+                padding: 1rem;
+            }
+            
+            .header-content {
+                padding: 0 1rem;
+            }
+            
+            .header h1 {
+                font-size: 1.875rem;
+            }
+            
+            .stats {
+                gap: 1rem;
+            }
+            
+            /* Single column grid on mobile */
+            .def-grid {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+            
+            /* Stack def header elements */
+            .def-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+            }
+            
+            /* Adjust spacing */
+            .search-container {
+                margin: 1rem 0;
+                padding: 1rem;
+            }
+            
+            .filters {
+                flex-direction: column;
+                gap: 0.75rem;
+                align-items: stretch;
+            }
+            
+            .filter-group {
+                width: 100%;
+            }
+            
+            /* Hide results counter on mobile to avoid overlap */
+            .results-counter {
+                bottom: 1rem;
+                right: 1rem;
+                padding: 0.5rem 1rem;
+                font-size: 0.75rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- Mobile Navbar -->
+        <nav class="mobile-navbar">
+            <div class="mobile-navbar-title">RimWorld Docs</div>
+            <button class="mobile-menu-toggle" @click="toggleMobileMenu">
+                {{ mobileMenuOpen ? '✕' : '☰' }}
+            </button>
+        </nav>
+        
+        <!-- Mobile Overlay -->
+        <div class="mobile-overlay" :class="{ active: mobileMenuOpen }" @click="closeMobileMenu"></div>
+        
+        <div class="app-layout">
+            <aside class="sidebar" :class="{ open: mobileMenuOpen }">
+                <div class="sidebar-header">
+                    <div class="sidebar-title">RimWorld Docs</div>
+                    <div class="sidebar-subtitle">{{ stats.total_defs }} definitions</div>
+                    <div v-if="searchQuery || typeFilter !== 'all' || extensionFilter !== 'all'" class="sidebar-filter-info">
+                        {{ categories.length - filteredCategoriesForNav.length }} categories hidden
+                    </div>
+                </div>
+                <nav class="nav-links">
+                    <li>
+                        <a @click="setActiveCategory('overview')" 
+                           :class="{ active: activeCategory === 'overview' }">
+                           Overview
+                        </a>
+                    </li>
+                    <li v-for="category in filteredCategoriesForNav" :key="category.name">
+                        <a @click="setActiveCategory(category.name)"
+                           :class="{ active: activeCategory === category.name }">
+                            {{ category.display_name }} ({{ getVisibleCount(category) }})
+                        </a>
+                    </li>
+                </nav>
+            </aside>
+            
+            <main class="main-content">
+                <header class="header">
+                    <div class="header-content">
+                        <h1>RimWorld XML Definitions Documentation</h1>
+                        <div class="stats">
+                            <div class="stat">
+                                <span class="stat-number">{{ stats.total_defs }}</span>
+                                <span class="stat-label">Total Definitions</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-number">{{ stats.total_categories }}</span>
+                                <span class="stat-label">Categories</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-number">{{ stats.total_files }}</span>
+                                <span class="stat-label">XML Files Processed</span>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+                
+                <div class="content-container">
+                    <div class="search-container">
+                        <div class="search-icon">🔍</div>
+                        <input
+                            v-model="searchQuery"
+                            type="text"
+                            class="search-box"
+                            placeholder="Search definitions by name, type, or content..."
+                            @input="performSearch">
+                    </div>
+
+                    <div class="filters">
+                        <div class="filter-group">
+                            <label>Type:</label>
+                            <button class="filter-btn" 
+                                    :class="{ active: typeFilter === 'all' }"
+                                    @click="setTypeFilter('all')">All</button>
+                            <button class="filter-btn" 
+                                    :class="{ active: typeFilter === 'abstract' }"
+                                    @click="setTypeFilter('abstract')">Abstract</button>
+                            <button class="filter-btn" 
+                                    :class="{ active: typeFilter === 'concrete' }"
+                                    @click="setTypeFilter('concrete')">Concrete</button>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label>Extension:</label>
+                            <button class="filter-btn" 
+                                    :class="{ active: extensionFilter === 'all' }"
+                                    @click="setExtensionFilter('all')">All</button>
+                            <button class="filter-btn" 
+                                    :class="{ active: extensionFilter === 'Core' }"
+                                    @click="setExtensionFilter('Core')">Core</button>
+                            <button class="filter-btn" 
+                                    :class="{ active: extensionFilter === 'Royalty' }"
+                                    @click="setExtensionFilter('Royalty')">Royalty</button>
+                            <button class="filter-btn" 
+                                    :class="{ active: extensionFilter === 'Ideology' }"
+                                    @click="setExtensionFilter('Ideology')">Ideology</button>
+                            <button class="filter-btn" 
+                                    :class="{ active: extensionFilter === 'Biotech' }"
+                                    @click="setExtensionFilter('Biotech')">Biotech</button>
+                            <button class="filter-btn" 
+                                    :class="{ active: extensionFilter === 'Anomaly' }"
+                                    @click="setExtensionFilter('Anomaly')">Anomaly</button>
+                            <button class="filter-btn" 
+                                    :class="{ active: extensionFilter === 'Odyssey' }"
+                                    @click="setExtensionFilter('Odyssey')">Odyssey</button>
+                            <button v-if="hasUnknownExtension" class="filter-btn" 
+                                    :class="{ active: extensionFilter === 'Unknown' }"
+                                    @click="setExtensionFilter('Unknown')">Unknown</button>
+                        </div>
+                    </div>
+
+                    <div v-if="loading" class="loading">
+                        <div class="loading-spinner"></div>
+                        <p>Loading and decompressing RimWorld definitions...</p>
+                    </div>
+
+                    <div v-else-if="error" class="error">
+                        <h3>Error loading data</h3>
+                        <p>{{ error }}</p>
+                    </div>
+
+                    <div v-else>
+                        <section v-if="activeCategory === 'overview'" class="def-category">
+                            <h2>Overview</h2>
+                            <p>This documentation contains all XML definitions from RimWorld. Use the search box above or navigation menu to find specific definitions, or apply filters to narrow down the display.</p>
+                            <p>Portions of the materials used to create this content are trademarks and copyrighted works of Ludeon Studios Inc. All rights reserved by Ludeon. This content is not official and is not endorsed by Ludeon.</p>
+                        </section>
+
+                        <section v-for="category in visibleCategories" :key="category.name" 
+                                 v-show="activeCategory === 'all' || activeCategory === category.name"
+                                 class="def-category">
+                            <div class="category-header">
+                                <h2 class="category-title">{{ category.display_name }}</h2>
+                                <p class="category-count">{{ getVisibleCount(category) }} definitions</p>
+                            </div>
+                            <div class="def-grid">
+                                <article v-for="def in getFilteredDefinitions(category)" 
+                                         :key="def.def_name" 
+                                         class="def-item"
+                                         :class="{ expanded: expandedDefs.has(def.def_name) }"
+                                         :data-def-key="`${def.def_type}:${def.def_name}`"
+                                         @click="toggleDef(def.def_name)">
+                                    <div class="def-header">
+                                        <h3 class="def-name">{{ def.def_name }}</h3>
+                                        <span class="def-type">{{ def.def_type }}</span>
+                                        <span class="extension-badge" :class="def.extension.toLowerCase()">{{ def.extension }}</span>
+                                        <span v-if="def.label" class="def-label">
+                                            {{ def.label }}
+                                        </span>
+                                    </div>
+
+                                    <p v-if="def.description" class="def-description">{{ def.description }}</p>
+
+                                    <div v-if="def.parent_name" class="def-parent">
+                                        <strong class="def-parent-label">Parent:</strong>
+                                        <span class="def-parent-name">{{ def.parent_name }}</span>
+                                    </div>
+
+                                    <div class="tags" v-if="def.tags && def.tags.length > 0">
+                                        <span v-for="tag in def.tags" :key="tag" 
+                                              class="tag" 
+                                              :class="{ 
+                                                  abstract: tag === 'Abstract', 
+                                                  parent: tag === 'Inherits' 
+                                              }">{{ tag }}</span>
+                                    </div>
+
+                                    <div class="file-path">{{ def.file_path }}</div>
+                                    
+                                    <div v-if="expandedDefs.has(def.def_name)" class="def-details">
+                                        <div v-if="def.references_in && def.references_in.length > 0" class="reference-section">
+                                            <h4>Referenced by ({{ def.references_in.length }})</h4>
+                                            <div class="reference-list">
+                                                <span v-for="refName in def.references_in" 
+                                                      :key="refName" 
+                                                      class="reference-item"
+                                                      @click.stop="scrollToDefByName(refName)">
+                                                    {{ refName }}
+                                                    <span class="ref-type-badge" v-if="defsByName[refName]">{{ defsByName[refName].def.def_type }}</span>
+                                                </span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div v-if="def.references_out && def.references_out.length > 0" class="reference-section">
+                                            <h4>References ({{ def.references_out.length }})</h4>
+                                            <div class="reference-list">
+                                                <span v-for="refName in def.references_out" 
+                                                      :key="refName" 
+                                                      class="reference-item"
+                                                      @click.stop="scrollToDefByName(refName)">
+                                                    {{ refName }}
+                                                    <span class="ref-type-badge" v-if="defsByName[refName]">{{ defsByName[refName].def.def_type }}</span>
+                                                </span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div v-if="def.code_references && def.code_references.length > 0" class="reference-section">
+                                            <h4>C# References ({{ def.code_references.length }})</h4>
+                                            <div class="reference-list">
+                                                <span v-for="className in def.code_references" 
+                                                      :key="className" 
+                                                      class="code-reference-item">
+                                                    {{ className }}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div v-if="(!def.references_in || def.references_in.length === 0) && (!def.references_out || def.references_out.length === 0) && (!def.code_references || def.code_references.length === 0)" class="no-references">
+                                            No references found
+                                        </div>
+
+                                        <div class="xml-section">
+                                            <div class="xml-header">
+                                                <h4>XML Definition</h4>
+                                                <div>
+                                                    <button class="btn xml-toggle" @click.stop="toggleXML(def.def_name)">
+                                                        {{ showXML.has(def.def_name) ? 'Hide XML' : 'Show XML' }}
+                                                    </button>
+                                                    <button v-if="showXML.has(def.def_name)" class="btn xml-copy" @click.stop="copyXML(def.raw_xml)">
+                                                        Copy XML
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div v-if="showXML.has(def.def_name)" class="xml-display" v-html="formatXML(def.raw_xml)"></div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="expand-indicator">{{ expandedDefs.has(def.def_name) ? '▲' : '▼' }}</div>
+                                </article>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </main>
+        </div>
+        
+        <div v-if="!loading && !error" class="results-counter">
+            {{ filteredDefinitionsCount }} of {{ stats.total_defs }} definitions
+        </div>
+    </div>
+
+    <script>
+        // Fetch and decompress data from dataset file
+        async function loadDataFromFile() {
+            try {
+                // Fetch the compressed data from static filename
+                const response = await fetch('dataset.json.zstd');
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch dataset: ${response.status} ${response.statusText}`);
+                }
+                
+                const compressed = new Uint8Array(await response.arrayBuffer());
+                
+                // Decompress with zstd
+                const decompressed = fzstd.decompress(compressed);
+                
+                // Convert to string and parse JSON
+                const jsonString = new TextDecoder().decode(decompressed);
+                return JSON.parse(jsonString);
+            } catch (error) {
+                console.error('Failed to load dataset:', error);
+                throw new Error('Failed to load definition data: ' + error.message);
+            }
+        }
+
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    // Data
+                    categories: [],
+                    stats: { total_defs: 0, total_categories: 0, total_files: 0 },
+                    defsByName: {},
+                    
+                    // Filters and Search
+                    searchQuery: '',
+                    typeFilter: 'all',
+                    extensionFilter: 'all',
+                    
+                    // UI State
+                    activeCategory: 'overview',
+                    expandedDefs: new Set(),
+                    showXML: new Set(),
+                    mobileMenuOpen: false,
+                    
+                    // Loading State
+                    loading: true,
+                    error: null
+                }
+            },
+            computed: {
+                visibleCategories() {
+                    if (!this.searchQuery && this.typeFilter === 'all' && this.extensionFilter === 'all') {
+                        return this.categories;
+                    }
+                    
+                    return this.categories.filter(category => {
+                        const filteredDefs = this.getFilteredDefinitions(category);
+                        return filteredDefs.length > 0;
+                    });
+                },
+                filteredCategoriesForNav() {
+                    if (!this.searchQuery && this.typeFilter === 'all' && this.extensionFilter === 'all') {
+                        return this.categories;
+                    }
+                    
+                    return this.categories.filter(category => {
+                        const filteredDefs = this.getFilteredDefinitions(category);
+                        return filteredDefs.length > 0;
+                    });
+                },
+                filteredDefinitionsCount() {
+                    return this.visibleCategories.reduce((total, category) => {
+                        return total + this.getFilteredDefinitions(category).length;
+                    }, 0);
+                },
+                hasUnknownExtension() {
+                    return this.categories.some(category => 
+                        category.definitions.some(def => def.extension === 'Unknown')
+                    );
+                }
+            },
+            methods: {
+                async loadData() {
+                    try {
+                        this.loading = true;
+                        
+                        const data = await loadDataFromFile();
+                        this.categories = data.categories;
+                        this.stats = data.stats;
+                        
+                        // Build def name map for quick lookups
+                        this.defsByName = {};
+                        for (const category of this.categories) {
+                            for (const def of category.definitions) {
+                                this.defsByName[def.def_name] = { def, category: category.name };
+                            }
+                        }
+                        
+                        this.loading = false;
+                        return Promise.resolve();
+                    } catch (error) {
+                        console.error('Load error:', error);
+                        this.error = error.message;
+                        this.loading = false;
+                        return Promise.reject(error);
+                    }
+                },
+                setActiveCategory(category) {
+                    this.activeCategory = category;
+                    this.closeMobileMenu();
+                },
+                toggleMobileMenu() {
+                    this.mobileMenuOpen = !this.mobileMenuOpen;
+                },
+                closeMobileMenu() {
+                    this.mobileMenuOpen = false;
+                },
+                setTypeFilter(filter) {
+                    this.typeFilter = filter;
+                },
+                setExtensionFilter(filter) {
+                    this.extensionFilter = filter;
+                },
+                getFilteredDefinitions(category) {
+                    let filtered = category.definitions;
+                    
+                    // Apply search filter
+                    if (this.searchQuery) {
+                        const query = this.searchQuery.toLowerCase();
+                        filtered = filtered.filter(def => {
+                            return def.def_name.toLowerCase().includes(query) ||
+                                   (def.label && def.label.toLowerCase().includes(query)) ||
+                                   (def.description && def.description.toLowerCase().includes(query)) ||
+                                   (def.tags && def.tags.some(tag => tag.toLowerCase().includes(query))) ||
+                                   def.def_type.toLowerCase().includes(query);
+                        });
+                    }
+                    
+                    // Apply type filter
+                    if (this.typeFilter === 'abstract') {
+                        filtered = filtered.filter(def => def.is_abstract);
+                    } else if (this.typeFilter === 'concrete') {
+                        filtered = filtered.filter(def => !def.is_abstract);
+                    }
+                    
+                    // Apply extension filter
+                    if (this.extensionFilter !== 'all') {
+                        filtered = filtered.filter(def => def.extension === this.extensionFilter);
+                    }
+                    
+                    return filtered;
+                },
+                getVisibleCount(category) {
+                    return this.getFilteredDefinitions(category).length;
+                },
+                performSearch() {
+                    // Search is reactive, no debouncing needed for now
+                },
+                // Toggle Methods
+                toggleDef(defName) {
+                    this.expandedDefs = this._toggleSet(this.expandedDefs, defName);
+                },
+                toggleXML(defName) {
+                    this.showXML = this._toggleSet(this.showXML, defName);
+                },
+                _toggleSet(set, item) {
+                    const newSet = new Set(set);
+                    if (newSet.has(item)) {
+                        newSet.delete(item);
+                    } else {
+                        newSet.add(item);
+                    }
+                    return newSet;
+                },
+                formatXML(xml) {
+                    // First, escape HTML entities
+                    const escaped = xml
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;');
+                    
+                    // Now apply syntax highlighting
+                    let result = '';
+                    let i = 0;
+                    
+                    while (i < escaped.length) {
+                        // Handle comments
+                        if (escaped.substring(i).startsWith('&lt;!--')) {
+                            const commentEnd = escaped.indexOf('--&gt;', i);
+                            if (commentEnd !== -1) {
+                                result += '<span class="xml-comment">' + escaped.substring(i, commentEnd + 6) + '</span>';
+                                i = commentEnd + 6;
+                                continue;
+                            }
+                        }
+                        
+                        // Handle CDATA
+                        if (escaped.substring(i).startsWith('&lt;![CDATA[')) {
+                            const cdataEnd = escaped.indexOf(']]&gt;', i);
+                            if (cdataEnd !== -1) {
+                                result += '<span class="xml-cdata">' + escaped.substring(i, cdataEnd + 6) + '</span>';
+                                i = cdataEnd + 6;
+                                continue;
+                            }
+                        }
+                        
+                        // Handle XML declaration
+                        if (escaped.substring(i).startsWith('&lt;?xml')) {
+                            const declEnd = escaped.indexOf('?&gt;', i);
+                            if (declEnd !== -1) {
+                                result += '<span class="xml-declaration">' + escaped.substring(i, declEnd + 5) + '</span>';
+                                i = declEnd + 5;
+                                continue;
+                            }
+                        }
+                        
+                        // Handle tags
+                        if (escaped[i] === '&' && escaped.substring(i).startsWith('&lt;')) {
+                            const tagEnd = escaped.indexOf('&gt;', i);
+                            if (tagEnd !== -1) {
+                                const tagContent = escaped.substring(i + 4, tagEnd);
+                                
+                                // Check if it's a closing tag
+                                if (tagContent.startsWith('/')) {
+                                    result += '<span class="xml-tag">&lt;/' + tagContent.substring(1) + '&gt;</span>';
+                                } else {
+                                    // Parse tag name and attributes
+                                    const spaceIndex = tagContent.search(/\s/);
+                                    const tagName = spaceIndex === -1 ? tagContent.replace('/', '') : tagContent.substring(0, spaceIndex);
+                                    const attributesStr = spaceIndex === -1 ? '' : tagContent.substring(spaceIndex);
+                                    
+                                    result += '<span class="xml-tag">&lt;' + tagName + '</span>';
+                                    
+                                    if (attributesStr) {
+                                        // Parse attributes
+                                        const attrRegex = /(\s+)([\w\-:]+)(=)(&quot;)([^&]*?)(&quot;)/g;
+                                        let processedAttrs = attributesStr.replace(attrRegex, (match, space, attrName, equals, quote1, attrValue, quote2) => {
+                                            if (attrName === 'Class') {
+                                                return space + '<span class="xml-attr">' + attrName + '</span>' + equals + 
+                                                       '<span class="xml-class-value">' + quote1 + attrValue + quote2 + '</span>';
+                                            } else {
+                                                return space + '<span class="xml-attr">' + attrName + '</span>' + equals + 
+                                                       '<span class="xml-value">' + quote1 + attrValue + quote2 + '</span>';
+                                            }
+                                        });
+                                        
+                                        // Handle self-closing slash
+                                        processedAttrs = processedAttrs.replace(/(\s*)(\/?)$/, (match, space, slash) => {
+                                            return space + (slash ? '<span class="xml-tag">' + slash + '</span>' : '');
+                                        });
+                                        
+                                        result += processedAttrs;
+                                    }
+                                    
+                                    result += '<span class="xml-tag">&gt;</span>';
+                                }
+                                
+                                i = tagEnd + 4;
+                                continue;
+                            }
+                        }
+                        
+                        // Handle text content
+                        if (escaped[i] !== '&' || !escaped.substring(i).startsWith('&lt;')) {
+                            let textEnd = i + 1;
+                            while (textEnd < escaped.length && 
+                                   (escaped[textEnd] !== '&' || !escaped.substring(textEnd).startsWith('&lt;'))) {
+                                textEnd++;
+                            }
+                            
+                            const text = escaped.substring(i, textEnd).trim();
+                            if (text) {
+                                result += '<span class="xml-content">' + escaped.substring(i, textEnd) + '</span>';
+                            } else {
+                                result += escaped.substring(i, textEnd);
+                            }
+                            i = textEnd;
+                            continue;
+                        }
+                        
+                        // Default case - just append the character
+                        result += escaped[i];
+                        i++;
+                    }
+                    
+                    return result;
+                },
+                async copyXML(xml) {
+                    try {
+                        await navigator.clipboard.writeText(xml);
+                    } catch (err) {
+                        // Fallback for older browsers
+                        this._fallbackCopy(xml);
+                    }
+                },
+                _fallbackCopy(text) {
+                    const textArea = document.createElement('textarea');
+                    textArea.value = text;
+                    textArea.style.position = 'fixed';
+                    textArea.style.opacity = '0';
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    try {
+                        document.execCommand('copy');
+                    } catch (err) {
+                        console.error('Copy failed:', err);
+                    }
+                    document.body.removeChild(textArea);
+                },
+                scrollToDefByName(defName) {
+                    const defInfo = this.defsByName[defName];
+                    if (!defInfo) {
+                        console.warn(`Definition not found: ${defName}`);
+                        return;
+                    }
+                    
+                    // Set the category to show the definition
+                    this.activeCategory = defInfo.category;
+                    
+                    // Clear search to ensure def is visible
+                    this.searchQuery = '';
+                    this.typeFilter = 'all';
+                    this.extensionFilter = 'all';
+                    
+                    // Collapse all cards and expand only the target definition
+                    this.expandedDefs.clear();
+                    this.expandedDefs.add(defName);
+                    this.expandedDefs = new Set(this.expandedDefs);
+                    
+                    // Clear XML display state
+                    this.showXML.clear();
+                    this.showXML = new Set(this.showXML);
+                    
+                    // Update URL hash
+                    window.location.hash = `#${defInfo.def.def_type}:${defName}`;
+                    
+                    // Wait for Vue to update the DOM
+                    this.$nextTick(() => {
+                        requestAnimationFrame(() => {
+                            this._scrollToElement(defInfo.def.def_type, defName);
+                        });
+                    });
+                },
+                handleHashChange() {
+                    const hash = window.location.hash.slice(1); // Remove the '#'
+                    if (hash && hash.includes(':')) {
+                        const [defType, defName] = hash.split(':', 2);
+                        this.scrollToDefByName(defName);
+                    }
+                },
+                _scrollToElement(defType, defName) {
+                    const element = document.querySelector(`[data-def-key="${defType}:${defName}"]`);
+                    if (element) {
+                        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        // Add a highlight effect
+                        element.style.transition = 'box-shadow 0.3s ease';
+                        element.style.boxShadow = '0 0 20px var(--primary-color)';
+                        setTimeout(() => {
+                            element.style.boxShadow = '';
+                        }, 2000);
+                    }
+                },
+                applyHashOnLoad() {
+                    // Apply hash navigation after data is loaded
+                    if (window.location.hash) {
+                        setTimeout(() => {
+                            this.handleHashChange();
+                        }, 100);
+                    }
+                }
+            },
+            mounted() {
+                this.loadData().then(() => {
+                    this.applyHashOnLoad();
+                });
+                
+                // Listen for hash changes (browser back/forward)
+                window.addEventListener('hashchange', this.handleHashChange);
+            },
+            beforeUnmount() {
+                window.removeEventListener('hashchange', this.handleHashChange);
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
