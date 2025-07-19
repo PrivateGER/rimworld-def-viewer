@@ -1055,7 +1055,7 @@
                                             No references found
                                         </div>
 
-                                        <div class="xml-section">
+                                        <div class="xml-section" @click.stop>
                                             <div class="xml-header">
                                                 <h4>XML Definition</h4>
                                                 <div>
@@ -1067,7 +1067,7 @@
                                                     </button>
                                                 </div>
                                             </div>
-                                            <div v-if="showXML.has(def.def_name)" class="xml-display" v-html="formatXML(def.raw_xml)"></div>
+                                            <div v-if="showXML.has(def.def_name)" class="xml-display" v-html="formatXML(def.raw_xml)" @click.stop></div>
                                         </div>
                                     </div>
                                     
