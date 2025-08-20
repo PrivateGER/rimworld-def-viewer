@@ -36,6 +36,8 @@ Run the tool with your RimWorld installation path:
 cargo run --release -- --path "/path/to/RimWorld"
 ```
 
+Do not run in debug mode unless you have a reason to. zstd compression is VERY slow when using an unoptimized build.
+
 Example for a typical Steam installation:
 ```bash
 cargo run --release -- --path "C:\Program Files (x86)\Steam\steamapps\common\Rimworld"
