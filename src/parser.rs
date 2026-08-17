@@ -114,16 +114,12 @@ impl DefParser {
 
                         if element_stack.is_empty() {
                             let def_name = element
-                                .attributes
-                                .get("Name")
-                                .or_else(|| {
-                                    element
-                                        .children
-                                        .iter()
-                                        .find(|child| child.name == "defName")
-                                        .and_then(|child| child.content.as_ref())
-                                })
+                                .children
+                                .iter()
+                                .find(|child| child.name == "defName")
+                                .and_then(|child| child.content.as_ref())
                                 .cloned();
+                            let inheritance_name = element.attributes.get("Name").cloned();
 
                             let label = element
                                 .children
@@ -166,6 +162,7 @@ impl DefParser {
                             parsed_defs.push(RimWorldDef {
                                 id,
                                 def_name,
+                                inheritance_name,
                                 def_type: element.name.clone(),
                                 label,
                                 description,
@@ -609,6 +606,24 @@ mod tests {
         assert_ne!(definitions[0].id, definitions[1].id);
         assert!(definitions[0].id.ends_with("#0"));
         assert!(definitions[1].id.ends_with("#1"));
+        Ok(())
+    }
+
+    #[test]
+    fn distinguishes_definition_names_from_inheritance_names() -> Result<()> {
+        let parsed_def = parse_single_definition(
+            r#"<Defs>
+                <ThingDef Name="ShipChunkBase">
+                    <defName>ShipChunk</defName>
+                </ThingDef>
+            </Defs>"#,
+        )?;
+
+        assert_eq!(parsed_def.def_name.as_deref(), Some("ShipChunk"));
+        assert_eq!(
+            parsed_def.inheritance_name.as_deref(),
+            Some("ShipChunkBase")
+        );
         Ok(())
     }
 }

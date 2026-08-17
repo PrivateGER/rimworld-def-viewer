@@ -130,6 +130,7 @@ createApp({
                 const query = this.searchQuery.toLowerCase();
                 filtered = filtered.filter(def => {
                     return (def.def_name && def.def_name.toLowerCase().includes(query)) ||
+                        (def.inheritance_name && def.inheritance_name.toLowerCase().includes(query)) ||
                            (def.label && def.label.toLowerCase().includes(query)) ||
                            (def.description && def.description.toLowerCase().includes(query)) ||
                            (def.tags && def.tags.some(tag => tag.toLowerCase().includes(query))) ||

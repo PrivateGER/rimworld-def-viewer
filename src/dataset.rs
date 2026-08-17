@@ -74,6 +74,7 @@ impl DatasetGenerator {
                     json!({
                         "id": definition.id,
                         "def_name": definition.def_name,
+                        "inheritance_name": definition.inheritance_name,
                         "def_type": definition.def_type,
                         "label": definition.label,
                         "description": definition.description,
@@ -230,6 +231,7 @@ mod tests {
         RimWorldDef {
             id: format!("{file_path}#{name}"),
             def_name: Some(name.to_string()),
+            inheritance_name: None,
             def_type: def_type.to_string(),
             label: None,
             description: None,
@@ -252,6 +254,7 @@ mod tests {
         let mut unnamed = definition("Unused", "SongDef", "Data/Core/Songs.xml");
         unnamed.id = "Data/Core/Songs.xml#0".to_string();
         unnamed.def_name = None;
+        unnamed.inheritance_name = Some("SongTemplate".to_string());
         let definitions = vec![
             definition("Zeta", "ThingDef", "Data/Core/Things.xml"),
             definition("Beta", "AbilityDef", "Data/Core/Abilities.xml"),
@@ -273,6 +276,10 @@ mod tests {
         assert_eq!(
             categories[1]["definitions"][0]["def_name"],
             serde_json::Value::Null
+        );
+        assert_eq!(
+            categories[1]["definitions"][0]["inheritance_name"],
+            "SongTemplate"
         );
         assert_eq!(
             categories[1]["definitions"][0]["id"],

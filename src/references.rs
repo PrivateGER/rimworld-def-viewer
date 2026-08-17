@@ -5,10 +5,17 @@ pub fn build_reference_mappings(definitions: &mut [RimWorldDef]) {
     println!("\nBuilding reference mappings...");
 
     let mut definitions_by_name: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut definitions_by_inheritance_name: HashMap<String, Vec<usize>> = HashMap::new();
     for (index, definition) in definitions.iter().enumerate() {
         if let Some(def_name) = &definition.def_name {
             definitions_by_name
                 .entry(def_name.clone())
+                .or_default()
+                .push(index);
+        }
+        if let Some(inheritance_name) = &definition.inheritance_name {
+            definitions_by_inheritance_name
+                .entry(inheritance_name.clone())
                 .or_default()
                 .push(index);
         }
@@ -44,7 +51,7 @@ pub fn build_reference_mappings(definitions: &mut [RimWorldDef]) {
                 source_index,
                 &parent_name,
                 definitions,
-                &definitions_by_name,
+                &definitions_by_inheritance_name,
                 &mut outgoing,
                 &mut incoming,
             )
@@ -125,6 +132,7 @@ fn definition_summary(definition: &RimWorldDef) -> DefinitionSummary {
     DefinitionSummary {
         id: definition.id.clone(),
         def_name: definition.def_name.clone(),
+        inheritance_name: definition.inheritance_name.clone(),
         def_type: definition.def_type.clone(),
         file_path: definition.file_path.clone(),
     }
@@ -181,6 +189,7 @@ mod tests {
         RimWorldDef {
             id: format!("Data/Core/Defs/{name}.xml#0"),
             def_name: Some(name.to_string()),
+            inheritance_name: None,
             def_type: "ThingDef".to_string(),
             label: None,
             description: None,
@@ -235,7 +244,9 @@ mod tests {
 
     #[test]
     fn represents_parent_relationships_in_both_directions() {
-        let parent = definition("Parent", Vec::new());
+        let mut parent = definition("UnusedDefName", Vec::new());
+        parent.def_name = None;
+        parent.inheritance_name = Some("Parent".to_string());
         let mut child = definition("Child", Vec::new());
         child.parent_name = Some("Parent".to_string());
         let mut definitions = vec![parent, child];
@@ -268,5 +279,25 @@ mod tests {
         assert_eq!(reference.targets.len(), 2);
         assert!(definitions[1].references_in.is_empty());
         assert!(definitions[2].references_in.is_empty());
+    }
+
+    #[test]
+    fn uses_definition_names_only_for_content_references() {
+        let source = definition(
+            "Source",
+            vec![
+                reference_element("ConcreteName"),
+                reference_element("TemplateName"),
+            ],
+        );
+        let mut target = definition("ConcreteName", Vec::new());
+        target.inheritance_name = Some("TemplateName".to_string());
+        let mut definitions = vec![source, target];
+
+        build_reference_mappings(&mut definitions);
+
+        assert_eq!(definitions[0].references_out.len(), 1);
+        assert_eq!(definitions[0].references_out[0].name, "ConcreteName");
+        assert_eq!(definitions[1].references_in.len(), 1);
     }
 }

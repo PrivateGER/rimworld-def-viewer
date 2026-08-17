@@ -69,6 +69,7 @@ impl DefElement {
 pub struct RimWorldDef {
     pub id: String,
     pub def_name: Option<String>,
+    pub inheritance_name: Option<String>,
     pub def_type: String,
     pub label: Option<String>,
     pub description: Option<String>,
@@ -98,6 +99,7 @@ pub struct DefinitionReference {
 pub struct DefinitionSummary {
     pub id: String,
     pub def_name: Option<String>,
+    pub inheritance_name: Option<String>,
     pub def_type: String,
     pub file_path: String,
 }

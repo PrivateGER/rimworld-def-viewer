@@ -53,7 +53,11 @@ mod tests {
 
         let index = fs::read_to_string(output_dir.join("index.html"))?;
         assert!(index.contains("v-for=\"source in def.references_in\""));
-        assert!(index.contains("{{ source.def_name || 'Unnamed definition' }}"));
+        assert!(
+            index.contains(
+                "{{ source.def_name || source.inheritance_name || 'Unnamed definition' }}"
+            )
+        );
 
         let compressed = fs::read(output_dir.join("dataset.json.zstd"))?;
         let json = zstd::decode_all(compressed.as_slice())?;

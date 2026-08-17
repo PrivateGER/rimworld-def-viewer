@@ -174,7 +174,7 @@
                                          :id="definitionElementId(def.id)"
                                          @click="toggleDef(def.id)">
                                     <div class="def-header">
-                                        <h3 class="def-name">{{ def.def_name || 'Unnamed definition' }}</h3>
+                                        <h3 class="def-name">{{ def.def_name || def.inheritance_name || 'Unnamed definition' }}</h3>
                                         <span class="def-type">{{ def.def_type }}</span>
                                         <span class="extension-badge" :class="def.extension.toLowerCase()">{{ def.extension }}</span>
                                         <span v-if="def.label" class="def-label">
@@ -209,7 +209,7 @@
                                                       class="reference-item"
                                                       :title="source.file_path"
                                                       @click.stop="scrollToDefinitionById(source.id)">
-                                                    {{ source.def_name || 'Unnamed definition' }}
+                                                    {{ source.def_name || source.inheritance_name || 'Unnamed definition' }}
                                                     <span class="ref-type-badge">{{ source.def_type }}</span>
                                                 </span>
                                             </div>
