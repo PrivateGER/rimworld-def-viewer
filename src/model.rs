@@ -7,6 +7,8 @@ pub struct DefElement {
     pub name: String,
     pub attributes: HashMap<String, String>,
     pub content: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub comments: Vec<String>,
     pub children: Vec<DefElement>,
     pub depth: usize,
 }
@@ -24,30 +26,35 @@ impl DefElement {
             }
         }
 
-        if self.content.is_none() && self.children.is_empty() {
+        if self.content.is_none() && self.comments.is_empty() && self.children.is_empty() {
             xml.push_str(" />\n");
             return xml;
         }
 
         xml.push('>');
+        let has_nested_content = !self.comments.is_empty() || !self.children.is_empty();
 
         if let Some(content) = &self.content {
-            if self.children.is_empty() {
+            if !has_nested_content {
                 xml.push_str(&escape(content));
             } else {
                 xml.push('\n');
                 xml.push_str(&format!("{}{}", "  ".repeat(indent + 1), escape(content)));
                 xml.push('\n');
             }
-        } else if !self.children.is_empty() {
+        } else if has_nested_content {
             xml.push('\n');
+        }
+
+        for comment in &self.comments {
+            xml.push_str(&format!("{}<!--{}-->\n", "  ".repeat(indent + 1), comment));
         }
 
         for child in &self.children {
             xml.push_str(&child.to_xml(indent + 1));
         }
 
-        if !self.children.is_empty() || (self.content.is_some() && !self.children.is_empty()) {
+        if has_nested_content {
             xml.push_str(&format!("{}</{}>", indent_str, self.name));
         } else {
             xml.push_str(&format!("</{}>", self.name));

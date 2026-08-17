@@ -207,6 +207,7 @@ mod tests {
             name: "targetDef".to_string(),
             attributes: HashMap::from([("Class".to_string(), "Example.Component".to_string())]),
             content: Some(target.to_string()),
+            comments: Vec::new(),
             children: Vec::new(),
             depth: 0,
         }

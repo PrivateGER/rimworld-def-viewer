@@ -80,6 +80,7 @@ impl DefParser {
                             name: name.clone(),
                             attributes,
                             content: None,
+                            comments: Vec::new(),
                             children: Vec::new(),
                             depth: element_stack.len(),
                         };
@@ -90,6 +91,7 @@ impl DefParser {
                             name: name.clone(),
                             attributes,
                             content: None,
+                            comments: Vec::new(),
                             children: Vec::new(),
                             depth: 0,
                         };
@@ -191,6 +193,12 @@ impl DefParser {
                 Ok(Event::CData(e)) => {
                     let text = reader.decoder().decode(e.as_ref())?;
                     Self::append_content(&mut element_stack, &text);
+                }
+                Ok(Event::Comment(e)) => {
+                    if in_defs && let Some(element) = element_stack.last_mut() {
+                        let comment = reader.decoder().decode(e.as_ref())?;
+                        element.comments.push(comment.into_owned());
+                    }
                 }
                 Ok(Event::Eof) => break,
                 Err(error) => return Err(anyhow::anyhow!("Error parsing XML: {}", error)),
@@ -450,12 +458,43 @@ mod tests {
             r#"<Defs>
                 <ThingDef>
                     <defName>SplitText</defName>
-                    <label>left<!-- split -->right &amp; more</label>
+                    <label>left<!-- use < and &amp; literally -->right &amp; more</label>
                 </ThingDef>
             </Defs>"#,
         )?;
 
         assert_eq!(parsed_def.label.as_deref(), Some("leftright & more"));
+        assert!(
+            parsed_def
+                .raw_xml
+                .contains("<!-- use < and &amp; literally -->"),
+            "reconstructed XML discarded or altered the comment: {}",
+            parsed_def.raw_xml
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn preserves_comments_nested_between_elements() -> Result<()> {
+        let parsed_def = parse_single_definition(
+            r#"<Defs>
+                <ThingDef>
+                    <defName>DocumentedValues</defName>
+                    <stages>
+                        <!-- Values correspond to display categories. -->
+                        <li>1</li>
+                        <li>2</li><!-- highest category -->
+                    </stages>
+                </ThingDef>
+            </Defs>"#,
+        )?;
+
+        assert!(
+            parsed_def
+                .raw_xml
+                .contains("<!-- Values correspond to display categories. -->")
+        );
+        assert!(parsed_def.raw_xml.contains("<!-- highest category -->"));
         Ok(())
     }
 
