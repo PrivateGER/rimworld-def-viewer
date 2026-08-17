@@ -10,7 +10,6 @@ use walkdir::WalkDir;
 pub struct DefParser {
     rimworld_data_path: String,
     parsed_defs: Vec<RimWorldDef>,
-    def_name_map: HashMap<String, Vec<usize>>,
 }
 
 impl DefParser {
@@ -18,7 +17,6 @@ impl DefParser {
         Self {
             rimworld_data_path,
             parsed_defs: Vec::new(),
-            def_name_map: HashMap::new(),
         }
     }
 
@@ -249,8 +247,6 @@ impl DefParser {
         println!("  Errors: {}", error_count);
         println!("  Total definitions: {}", self.parsed_defs.len());
 
-        self.build_reference_mappings();
-
         Ok(())
     }
 
@@ -331,110 +327,6 @@ impl DefParser {
             })
             .max()
             .unwrap_or(current_depth)
-    }
-
-    fn build_reference_mappings(&mut self) {
-        println!("\nBuilding reference mappings...");
-
-        for (index, definition) in self.parsed_defs.iter().enumerate() {
-            self.def_name_map
-                .entry(definition.def_name.clone())
-                .or_default()
-                .push(index);
-        }
-
-        let mut reference_count = 0;
-        for index in 0..self.parsed_defs.len() {
-            let def_name = self.parsed_defs[index].def_name.clone();
-            let (references, code_references) =
-                self.extract_references(&self.parsed_defs[index].elements);
-
-            let valid_references: Vec<String> = references
-                .into_iter()
-                .filter(|reference_name| {
-                    self.def_name_map.contains_key(reference_name) && reference_name != &def_name
-                })
-                .collect();
-
-            reference_count += valid_references.len();
-            self.parsed_defs[index].references_out = valid_references.clone();
-            self.parsed_defs[index].code_references = code_references;
-
-            for reference_name in valid_references {
-                if let Some(reference_indices) = self.def_name_map.get(&reference_name) {
-                    for &reference_index in reference_indices {
-                        self.parsed_defs[reference_index]
-                            .references_in
-                            .push(def_name.clone());
-                    }
-                }
-            }
-        }
-
-        for index in 0..self.parsed_defs.len() {
-            if let Some(parent_name) = &self.parsed_defs[index].parent_name.clone()
-                && let Some(parent_indices) = self.def_name_map.get(parent_name)
-            {
-                let child_name = self.parsed_defs[index].def_name.clone();
-                for &parent_index in parent_indices {
-                    if !self.parsed_defs[parent_index]
-                        .references_in
-                        .contains(&child_name)
-                    {
-                        self.parsed_defs[parent_index]
-                            .references_in
-                            .push(child_name.clone());
-                    }
-                }
-            }
-        }
-
-        println!(
-            "  ✓ Reference mappings built: {} references found",
-            reference_count
-        );
-    }
-
-    fn extract_references(&self, elements: &[DefElement]) -> (Vec<String>, Vec<String>) {
-        let mut references = Vec::new();
-        let mut code_references = Vec::new();
-
-        Self::extract_references_recursive(elements, &mut references, &mut code_references);
-
-        references.sort();
-        references.dedup();
-        code_references.sort();
-        code_references.dedup();
-
-        (references, code_references)
-    }
-
-    fn extract_references_recursive(
-        elements: &[DefElement],
-        references: &mut Vec<String>,
-        code_references: &mut Vec<String>,
-    ) {
-        for element in elements {
-            if element.name != "defName" && element.name != "li" {
-                references.push(element.name.clone());
-            }
-
-            if let Some(content) = &element.content
-                && element.name != "defName"
-            {
-                references.push(content.clone());
-            }
-
-            for (key, value) in &element.attributes {
-                if key == "Class" {
-                    code_references.push(value.clone());
-                } else {
-                    references.push(value.clone());
-                }
-            }
-
-            Self::extract_references_recursive(&element.children, references, code_references);
-        }
     }
 }
 
