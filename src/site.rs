@@ -55,12 +55,9 @@ mod tests {
         let app = fs::read_to_string(output_dir.join("app.js"))?;
         assert!(app.contains("def.def_type = category.name"));
         assert!(app.contains("def.extension = extensionFromFilePath(def.file_path)"));
-        assert!(index.contains("v-for=\"source in def.references_in\""));
-        assert!(
-            index.contains(
-                "{{ source.def_name || source.inheritance_name || 'Unnamed definition' }}"
-            )
-        );
+        assert!(app.contains("target.references_in.push(def.id)"));
+        assert!(index.contains("v-for=\"sourceId in def.references_in\""));
+        assert!(index.contains("definitionDisplayName(definitionById(sourceId))"));
 
         let compressed = fs::read(output_dir.join("dataset.json.zstd"))?;
         let json = zstd::decode_all(compressed.as_slice())?;

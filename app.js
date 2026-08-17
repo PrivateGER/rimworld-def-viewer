@@ -109,6 +109,20 @@ createApp({
                     }
                 }
 
+                // Rebuild unique reverse edges while keeping references as IDs.
+                for (const category of this.categories) {
+                    for (const def of category.definitions) {
+                        for (const reference of def.references_out) {
+                            if (reference.targets.length === 1) {
+                                const target = this.definitionById(reference.targets[0]);
+                                if (target && !target.references_in.includes(def.id)) {
+                                    target.references_in.push(def.id);
+                                }
+                            }
+                        }
+                    }
+                }
+
                 this.loading = false;
                 return Promise.resolve();
             } catch (error) {
@@ -166,6 +180,12 @@ createApp({
         },
         getVisibleCount(category) {
             return this.getFilteredDefinitions(category).length;
+        },
+        definitionById(definitionId) {
+            return this.defsById[definitionId]?.def;
+        },
+        definitionDisplayName(definition) {
+            return definition?.def_name || definition?.inheritance_name || 'Unnamed definition';
         },
         performSearch() {
             // Search is reactive, no debouncing needed for now

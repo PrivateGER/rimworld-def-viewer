@@ -204,13 +204,13 @@
                                         <div v-if="def.references_in && def.references_in.length > 0" class="reference-section">
                                             <h4>Referenced by ({{ def.references_in.length }})</h4>
                                             <div class="reference-list">
-                                                <span v-for="source in def.references_in"
-                                                      :key="source.id"
+                                                <span v-for="sourceId in def.references_in"
+                                                      :key="sourceId"
                                                       class="reference-item"
-                                                      :title="source.file_path"
-                                                      @click.stop="scrollToDefinitionById(source.id)">
-                                                    {{ source.def_name || source.inheritance_name || 'Unnamed definition' }}
-                                                    <span class="ref-type-badge">{{ source.def_type }}</span>
+                                                      :title="definitionById(sourceId)?.file_path"
+                                                      @click.stop="scrollToDefinitionById(sourceId)">
+                                                    {{ definitionDisplayName(definitionById(sourceId)) }}
+                                                    <span class="ref-type-badge">{{ definitionById(sourceId)?.def_type }}</span>
                                                 </span>
                                             </div>
                                         </div>
@@ -219,14 +219,14 @@
                                             <h4>References ({{ def.references_out.length }})</h4>
                                             <div class="reference-list">
                                                 <template v-for="reference in def.references_out" :key="reference.name">
-                                                    <span v-for="target in reference.targets"
-                                                          :key="target.id"
+                                                    <span v-for="targetId in reference.targets"
+                                                          :key="targetId"
                                                           class="reference-item"
-                                                          :title="target.file_path"
-                                                          @click.stop="scrollToDefinitionById(target.id)">
+                                                          :title="definitionById(targetId)?.file_path"
+                                                          @click.stop="scrollToDefinitionById(targetId)">
                                                         {{ reference.name }}
                                                         <span class="ref-type-badge">
-                                                            {{ target.def_type }}{{ reference.targets.length > 1 ? ' · candidate' : '' }}
+                                                            {{ definitionById(targetId)?.def_type }}{{ reference.targets.length > 1 ? ' · candidate' : '' }}
                                                         </span>
                                                     </span>
                                                 </template>

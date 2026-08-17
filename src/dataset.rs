@@ -1,4 +1,4 @@
-use crate::model::{DefinitionReference, DefinitionSummary, RimWorldDef};
+use crate::model::{DefinitionReference, RimWorldDef};
 use anyhow::Result;
 use chrono::Utc;
 use serde::Serialize;
@@ -168,10 +168,8 @@ struct DefinitionPayload<'a> {
     file_path: &'a str,
     #[serde(skip_serializing_if = "<[String]>::is_empty")]
     tags: &'a [String],
-    #[serde(skip_serializing_if = "<[DefinitionReference]>::is_empty")]
-    references_out: &'a [DefinitionReference],
-    #[serde(skip_serializing_if = "<[DefinitionSummary]>::is_empty")]
-    references_in: &'a [DefinitionSummary],
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    references_out: Vec<ReferencePayload<'a>>,
     #[serde(skip_serializing_if = "<[String]>::is_empty")]
     code_references: &'a [String],
     raw_xml: &'a str,
@@ -189,10 +187,32 @@ impl<'a> From<&'a RimWorldDef> for DefinitionPayload<'a> {
             is_abstract: definition.is_abstract,
             file_path: &definition.file_path,
             tags: &definition.tags,
-            references_out: &definition.references_out,
-            references_in: &definition.references_in,
+            references_out: definition
+                .references_out
+                .iter()
+                .map(ReferencePayload::from)
+                .collect(),
             code_references: &definition.code_references,
             raw_xml: &definition.raw_xml,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ReferencePayload<'a> {
+    name: &'a str,
+    targets: Vec<&'a str>,
+}
+
+impl<'a> From<&'a DefinitionReference> for ReferencePayload<'a> {
+    fn from(reference: &'a DefinitionReference) -> Self {
+        Self {
+            name: &reference.name,
+            targets: reference
+                .targets
+                .iter()
+                .map(|target| target.id.as_str())
+                .collect(),
         }
     }
 }
@@ -213,6 +233,7 @@ struct Stats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::DefinitionSummary;
 
     fn definition(name: &str, def_type: &str, file_path: &str) -> RimWorldDef {
         RimWorldDef {
@@ -246,10 +267,33 @@ mod tests {
         unnamed.class_name = Some("Verse.SpecialSongDef".to_string());
         let mut abstract_definition = definition("Beta", "AbilityDef", "Data/Core/Abilities.xml");
         abstract_definition.is_abstract = true;
+        let mut alpha = definition("Alpha", "AbilityDef", "Data/Core/Abilities.xml");
+        let alpha_summary = DefinitionSummary {
+            id: alpha.id.clone(),
+            def_name: alpha.def_name.clone(),
+            inheritance_name: None,
+            def_type: alpha.def_type.clone(),
+            file_path: alpha.file_path.clone(),
+        };
+        let beta_summary = DefinitionSummary {
+            id: abstract_definition.id.clone(),
+            def_name: abstract_definition.def_name.clone(),
+            inheritance_name: None,
+            def_type: abstract_definition.def_type.clone(),
+            file_path: abstract_definition.file_path.clone(),
+        };
+        abstract_definition
+            .references_out
+            .push(DefinitionReference {
+                name: "Alpha".to_string(),
+                targets: vec![alpha_summary],
+            });
+        alpha.references_in.push(beta_summary);
+
         let definitions = vec![
             definition("Zeta", "ThingDef", "Data/Core/Things.xml"),
             abstract_definition,
-            definition("Alpha", "AbilityDef", "Data/Core/Abilities.xml"),
+            alpha,
             unnamed,
         ];
         let generator = DatasetGenerator::new(definitions, "/missing/rimworld".to_string())?;
@@ -265,6 +309,15 @@ mod tests {
         assert_eq!(categories[0]["definitions"][0]["def_name"], "Alpha");
         assert_eq!(categories[0]["definitions"][1]["def_name"], "Beta");
         assert_eq!(categories[0]["definitions"][1]["is_abstract"], true);
+        assert!(
+            categories[0]["definitions"][0]
+                .get("references_in")
+                .is_none()
+        );
+        assert_eq!(
+            categories[0]["definitions"][1]["references_out"][0]["targets"][0],
+            categories[0]["definitions"][0]["id"]
+        );
         assert!(categories[0].get("count").is_none());
         assert!(categories[1]["definitions"][0].get("def_name").is_none());
         assert_eq!(
