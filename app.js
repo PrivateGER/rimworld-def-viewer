@@ -21,6 +21,11 @@ async function loadDataFromFile() {
     }
 }
 
+function extensionFromFilePath(filePath) {
+    const pathParts = filePath.split(/[\\/]/);
+    return pathParts[0] === 'Data' && pathParts[1] ? pathParts[1] : 'Unknown';
+}
+
 const { createApp } = Vue;
 
 createApp({
@@ -92,6 +97,13 @@ createApp({
                 this.defsById = {};
                 for (const category of this.categories) {
                     for (const def of category.definitions) {
+                        def.def_type = category.name;
+                        def.extension = extensionFromFilePath(def.file_path);
+                        def.is_abstract = def.is_abstract === true;
+                        def.tags ||= [];
+                        def.references_out ||= [];
+                        def.references_in ||= [];
+                        def.code_references ||= [];
                         const defInfo = { def, category: category.name };
                         this.defsById[def.id] = defInfo;
                     }

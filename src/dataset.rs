@@ -1,4 +1,4 @@
-use crate::model::{DefElement, RimWorldDef};
+use crate::model::{DefinitionReference, DefinitionSummary, RimWorldDef};
 use anyhow::Result;
 use chrono::Utc;
 use serde::Serialize;
@@ -69,27 +69,8 @@ impl DatasetGenerator {
             category_data.push(json!({
                 "name": name,
                 "display_name": self.format_category_name(&name),
-                "count": sorted_definitions.len(),
                 "definitions": sorted_definitions.iter().map(|definition| {
-                    json!({
-                        "id": definition.id,
-                        "def_name": definition.def_name,
-                        "inheritance_name": definition.inheritance_name,
-                        "class_name": definition.class_name,
-                        "def_type": definition.def_type,
-                        "label": definition.label,
-                        "description": definition.description,
-                        "parent_name": definition.parent_name,
-                        "is_abstract": definition.is_abstract,
-                        "file_path": definition.file_path,
-                        "tags": definition.tags,
-                        "elements": self.flatten_elements(&definition.elements),
-                        "references_out": definition.references_out,
-                        "references_in": definition.references_in,
-                        "code_references": definition.code_references,
-                        "raw_xml": definition.raw_xml,
-                        "extension": definition.extension
-                    })
+                    DefinitionPayload::from(*definition)
                 }).collect::<Vec<_>>()
             }));
         }
@@ -150,52 +131,6 @@ impl DatasetGenerator {
         result
     }
 
-    fn flatten_elements(&self, elements: &[DefElement]) -> Vec<serde_json::Value> {
-        let mut result = Vec::new();
-
-        for element in elements.iter().take(15) {
-            self.flatten_element_recursive(element, &mut result, 0);
-            if result.len() >= 50 {
-                break;
-            }
-        }
-
-        result
-    }
-
-    fn flatten_element_recursive(
-        &self,
-        element: &DefElement,
-        result: &mut Vec<serde_json::Value>,
-        depth: usize,
-    ) {
-        if depth > 3 || result.len() >= 50 {
-            return;
-        }
-
-        let mut attributes = String::new();
-        if !element.attributes.is_empty() {
-            attributes = element
-                .attributes
-                .iter()
-                .map(|(key, value)| format!("{}=\"{}\"", key, value))
-                .collect::<Vec<_>>()
-                .join(" ");
-        }
-
-        result.push(json!({
-            "name": element.name,
-            "content": element.content,
-            "depth": depth * 20,
-            "attributes": attributes,
-            "has_children": !element.children.is_empty()
-        }));
-
-        for child in element.children.iter().take(5) {
-            self.flatten_element_recursive(child, result, depth + 1);
-        }
-    }
-
     fn get_stats(&self) -> Stats {
         let mut files = std::collections::HashSet::new();
         let mut categories = std::collections::HashSet::new();
@@ -213,6 +148,57 @@ impl DatasetGenerator {
             generated_at: Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
         }
     }
+}
+
+#[derive(Serialize)]
+struct DefinitionPayload<'a> {
+    id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    def_name: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    inheritance_name: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    label: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent_name: Option<&'a str>,
+    #[serde(skip_serializing_if = "is_false")]
+    is_abstract: bool,
+    file_path: &'a str,
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    tags: &'a [String],
+    #[serde(skip_serializing_if = "<[DefinitionReference]>::is_empty")]
+    references_out: &'a [DefinitionReference],
+    #[serde(skip_serializing_if = "<[DefinitionSummary]>::is_empty")]
+    references_in: &'a [DefinitionSummary],
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    code_references: &'a [String],
+    raw_xml: &'a str,
+}
+
+impl<'a> From<&'a RimWorldDef> for DefinitionPayload<'a> {
+    fn from(definition: &'a RimWorldDef) -> Self {
+        Self {
+            id: &definition.id,
+            def_name: definition.def_name.as_deref(),
+            inheritance_name: definition.inheritance_name.as_deref(),
+            label: definition.label.as_deref(),
+            description: definition.description.as_deref(),
+            parent_name: definition.parent_name.as_deref(),
+            is_abstract: definition.is_abstract,
+            file_path: &definition.file_path,
+            tags: &definition.tags,
+            references_out: &definition.references_out,
+            references_in: &definition.references_in,
+            code_references: &definition.code_references,
+            raw_xml: &definition.raw_xml,
+        }
+    }
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -257,9 +243,12 @@ mod tests {
         unnamed.id = "Data/Core/Songs.xml#0".to_string();
         unnamed.def_name = None;
         unnamed.inheritance_name = Some("SongTemplate".to_string());
+        unnamed.class_name = Some("Verse.SpecialSongDef".to_string());
+        let mut abstract_definition = definition("Beta", "AbilityDef", "Data/Core/Abilities.xml");
+        abstract_definition.is_abstract = true;
         let definitions = vec![
             definition("Zeta", "ThingDef", "Data/Core/Things.xml"),
-            definition("Beta", "AbilityDef", "Data/Core/Abilities.xml"),
+            abstract_definition,
             definition("Alpha", "AbilityDef", "Data/Core/Abilities.xml"),
             unnamed,
         ];
@@ -275,10 +264,9 @@ mod tests {
         assert_eq!(categories[2]["name"], "ThingDef");
         assert_eq!(categories[0]["definitions"][0]["def_name"], "Alpha");
         assert_eq!(categories[0]["definitions"][1]["def_name"], "Beta");
-        assert_eq!(
-            categories[1]["definitions"][0]["def_name"],
-            serde_json::Value::Null
-        );
+        assert_eq!(categories[0]["definitions"][1]["is_abstract"], true);
+        assert!(categories[0].get("count").is_none());
+        assert!(categories[1]["definitions"][0].get("def_name").is_none());
         assert_eq!(
             categories[1]["definitions"][0]["inheritance_name"],
             "SongTemplate"
@@ -287,6 +275,17 @@ mod tests {
             categories[1]["definitions"][0]["id"],
             "Data/Core/Songs.xml#0"
         );
+        for category in categories {
+            for definition in category["definitions"].as_array().unwrap() {
+                assert!(definition.get("class_name").is_none());
+                assert!(definition.get("def_type").is_none());
+                assert!(definition.get("elements").is_none());
+                assert!(definition.get("extension").is_none());
+                if definition["def_name"] != "Beta" {
+                    assert!(definition.get("is_abstract").is_none());
+                }
+            }
+        }
         assert_eq!(data["stats"]["total_defs"], 4);
         assert_eq!(data["stats"]["total_categories"], 3);
         assert_eq!(data["stats"]["total_files"], 3);

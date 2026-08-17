@@ -52,6 +52,9 @@ mod tests {
         );
 
         let index = fs::read_to_string(output_dir.join("index.html"))?;
+        let app = fs::read_to_string(output_dir.join("app.js"))?;
+        assert!(app.contains("def.def_type = category.name"));
+        assert!(app.contains("def.extension = extensionFromFilePath(def.file_path)"));
         assert!(index.contains("v-for=\"source in def.references_in\""));
         assert!(
             index.contains(
