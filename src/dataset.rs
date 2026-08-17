@@ -60,7 +60,11 @@ impl DatasetGenerator {
         let mut category_data = Vec::new();
         for (name, definitions) in categories {
             let mut sorted_definitions = definitions.clone();
-            sorted_definitions.sort_by(|left, right| left.def_name.cmp(&right.def_name));
+            sorted_definitions.sort_by(|left, right| {
+                left.def_name
+                    .cmp(&right.def_name)
+                    .then_with(|| left.id.cmp(&right.id))
+            });
 
             category_data.push(json!({
                 "name": name,
@@ -68,6 +72,7 @@ impl DatasetGenerator {
                 "count": sorted_definitions.len(),
                 "definitions": sorted_definitions.iter().map(|definition| {
                     json!({
+                        "id": definition.id,
                         "def_name": definition.def_name,
                         "def_type": definition.def_type,
                         "label": definition.label,
@@ -223,7 +228,8 @@ mod tests {
 
     fn definition(name: &str, def_type: &str, file_path: &str) -> RimWorldDef {
         RimWorldDef {
-            def_name: name.to_string(),
+            id: format!("{file_path}#{name}"),
+            def_name: Some(name.to_string()),
             def_type: def_type.to_string(),
             label: None,
             description: None,
@@ -243,10 +249,14 @@ mod tests {
 
     #[test]
     fn compressed_dataset_preserves_the_sorted_frontend_contract() -> Result<()> {
+        let mut unnamed = definition("Unused", "SongDef", "Data/Core/Songs.xml");
+        unnamed.id = "Data/Core/Songs.xml#0".to_string();
+        unnamed.def_name = None;
         let definitions = vec![
             definition("Zeta", "ThingDef", "Data/Core/Things.xml"),
             definition("Beta", "AbilityDef", "Data/Core/Abilities.xml"),
             definition("Alpha", "AbilityDef", "Data/Core/Abilities.xml"),
+            unnamed,
         ];
         let generator = DatasetGenerator::new(definitions, "/missing/rimworld".to_string())?;
 
@@ -256,12 +266,21 @@ mod tests {
 
         let categories = data["categories"].as_array().unwrap();
         assert_eq!(categories[0]["name"], "AbilityDef");
-        assert_eq!(categories[1]["name"], "ThingDef");
+        assert_eq!(categories[1]["name"], "SongDef");
+        assert_eq!(categories[2]["name"], "ThingDef");
         assert_eq!(categories[0]["definitions"][0]["def_name"], "Alpha");
         assert_eq!(categories[0]["definitions"][1]["def_name"], "Beta");
-        assert_eq!(data["stats"]["total_defs"], 3);
-        assert_eq!(data["stats"]["total_categories"], 2);
-        assert_eq!(data["stats"]["total_files"], 2);
+        assert_eq!(
+            categories[1]["definitions"][0]["def_name"],
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            categories[1]["definitions"][0]["id"],
+            "Data/Core/Songs.xml#0"
+        );
+        assert_eq!(data["stats"]["total_defs"], 4);
+        assert_eq!(data["stats"]["total_categories"], 3);
+        assert_eq!(data["stats"]["total_files"], 3);
         assert_eq!(data["stats"]["game_version"], "Unknown");
 
         Ok(())

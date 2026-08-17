@@ -121,8 +121,7 @@ impl DefParser {
                                         .find(|child| child.name == "defName")
                                         .and_then(|child| child.content.as_ref())
                                 })
-                                .map_or("Unknown", |value| value)
-                                .to_string();
+                                .cloned();
 
                             let label = element
                                 .children
@@ -160,8 +159,10 @@ impl DefParser {
                                     .to_string_lossy()
                                     .to_string()
                             };
+                            let id = format!("{}#{}", relative_path, parsed_defs.len());
 
                             parsed_defs.push(RimWorldDef {
+                                id,
                                 def_name,
                                 def_type: element.name.clone(),
                                 label,
@@ -355,7 +356,7 @@ mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn parse_single_definition(xml: &str) -> Result<RimWorldDef> {
+    fn parse_definitions(xml: &str) -> Result<Vec<RimWorldDef>> {
         let unique = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let file_path = std::env::temp_dir().join(format!(
             "rimworld-def-viewer-{}-{unique}.xml",
@@ -366,8 +367,11 @@ mod tests {
         let parser = DefParser::new(std::env::temp_dir().to_string_lossy().into_owned());
         let parse_result = parser.parse_xml_file(&file_path);
         let _ = fs::remove_file(&file_path);
-        let mut parsed_defs = parse_result?;
+        parse_result
+    }
 
+    fn parse_single_definition(xml: &str) -> Result<RimWorldDef> {
+        let mut parsed_defs = parse_definitions(xml)?;
         assert_eq!(parsed_defs.len(), 1);
         Ok(parsed_defs.remove(0))
     }
@@ -397,7 +401,7 @@ mod tests {
             </Defs>"#,
         )?;
 
-        assert_eq!(parsed_def.def_name, "WorkSite_ChopTrees");
+        assert_eq!(parsed_def.def_name.as_deref(), Some("WorkSite_ChopTrees"));
 
         let gen_step = parsed_def
             .elements
@@ -545,6 +549,27 @@ mod tests {
             parser.parsed_defs.is_empty(),
             "definitions from a malformed file must not be committed"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn assigns_unique_ids_without_inventing_definition_names() -> Result<()> {
+        let definitions = parse_definitions(
+            r#"<Defs>
+                <SongDef><clipPath>Songs/First</clipPath></SongDef>
+                <SongDef><clipPath>Songs/Second</clipPath></SongDef>
+            </Defs>"#,
+        )?;
+
+        assert_eq!(definitions.len(), 2);
+        assert!(
+            definitions
+                .iter()
+                .all(|definition| definition.def_name.is_none())
+        );
+        assert_ne!(definitions[0].id, definitions[1].id);
+        assert!(definitions[0].id.ends_with("#0"));
+        assert!(definitions[1].id.ends_with("#1"));
         Ok(())
     }
 }

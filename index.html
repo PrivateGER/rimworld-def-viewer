@@ -18,10 +18,10 @@
                 {{ mobileMenuOpen ? '✕' : '☰' }}
             </button>
         </nav>
-        
+
         <!-- Mobile Overlay -->
         <div class="mobile-overlay" :class="{ active: mobileMenuOpen }" @click="closeMobileMenu"></div>
-        
+
         <div class="app-layout">
             <aside class="sidebar" :class="{ open: mobileMenuOpen }">
                 <div class="sidebar-header">
@@ -33,7 +33,7 @@
                 </div>
                 <nav class="nav-links">
                     <li>
-                        <a @click="setActiveCategory('overview')" 
+                        <a @click="setActiveCategory('overview')"
                            :class="{ active: activeCategory === 'overview' }">
                            Overview
                         </a>
@@ -46,7 +46,7 @@
                     </li>
                 </nav>
             </aside>
-            
+
             <main class="main-content">
                 <header class="header">
                     <div class="header-content">
@@ -75,7 +75,7 @@
                         </div>
                     </div>
                 </header>
-                
+
                 <div class="content-container">
                     <div class="search-container">
                         <div class="search-icon">🔍</div>
@@ -90,41 +90,41 @@
                     <div class="filters">
                         <div class="filter-group">
                             <label>Type:</label>
-                            <button class="filter-btn" 
+                            <button class="filter-btn"
                                     :class="{ active: typeFilter === 'all' }"
                                     @click="setTypeFilter('all')">All</button>
-                            <button class="filter-btn" 
+                            <button class="filter-btn"
                                     :class="{ active: typeFilter === 'abstract' }"
                                     @click="setTypeFilter('abstract')">Abstract</button>
-                            <button class="filter-btn" 
+                            <button class="filter-btn"
                                     :class="{ active: typeFilter === 'concrete' }"
                                     @click="setTypeFilter('concrete')">Concrete</button>
                         </div>
-                        
+
                         <div class="filter-group">
                             <label>Extension:</label>
-                            <button class="filter-btn" 
+                            <button class="filter-btn"
                                     :class="{ active: extensionFilter === 'all' }"
                                     @click="setExtensionFilter('all')">All</button>
-                            <button class="filter-btn" 
+                            <button class="filter-btn"
                                     :class="{ active: extensionFilter === 'Core' }"
                                     @click="setExtensionFilter('Core')">Core</button>
-                            <button class="filter-btn" 
+                            <button class="filter-btn"
                                     :class="{ active: extensionFilter === 'Royalty' }"
                                     @click="setExtensionFilter('Royalty')">Royalty</button>
-                            <button class="filter-btn" 
+                            <button class="filter-btn"
                                     :class="{ active: extensionFilter === 'Ideology' }"
                                     @click="setExtensionFilter('Ideology')">Ideology</button>
-                            <button class="filter-btn" 
+                            <button class="filter-btn"
                                     :class="{ active: extensionFilter === 'Biotech' }"
                                     @click="setExtensionFilter('Biotech')">Biotech</button>
-                            <button class="filter-btn" 
+                            <button class="filter-btn"
                                     :class="{ active: extensionFilter === 'Anomaly' }"
                                     @click="setExtensionFilter('Anomaly')">Anomaly</button>
-                            <button class="filter-btn" 
+                            <button class="filter-btn"
                                     :class="{ active: extensionFilter === 'Odyssey' }"
                                     @click="setExtensionFilter('Odyssey')">Odyssey</button>
-                            <button v-if="hasUnknownExtension" class="filter-btn" 
+                            <button v-if="hasUnknownExtension" class="filter-btn"
                                     :class="{ active: extensionFilter === 'Unknown' }"
                                     @click="setExtensionFilter('Unknown')">Unknown</button>
                         </div>
@@ -144,7 +144,7 @@
                         <section v-if="activeCategory === 'overview'" class="def-category">
                             <h2>Overview</h2>
                             <p>This documentation contains all XML definitions from RimWorld. Use the search box above or navigation menu to find specific definitions, or apply filters to narrow down the display.</p>
-                            
+
                             <div class="overview-stats" style="display: flex; gap: 2rem; margin: 2rem 0; flex-wrap: wrap;">
                                 <div class="overview-stat">
                                     <h3 style="margin: 0 0 0.5rem 0; color: var(--primary-color); font-size: 1.125rem;">Game Version</h3>
@@ -155,11 +155,11 @@
                                     <p style="margin: 0; font-size: 1rem; color: var(--text);">{{ stats.generated_at }}</p>
                                 </div>
                             </div>
-                            
+
                             <p>Portions of the materials used to create this content are trademarks and copyrighted works of Ludeon Studios Inc. All rights reserved by Ludeon. This content is not official and is not endorsed by Ludeon.</p>
                         </section>
 
-                        <section v-for="category in visibleCategories" :key="category.name" 
+                        <section v-for="category in visibleCategories" :key="category.name"
                                  v-show="activeCategory === 'all' || activeCategory === category.name"
                                  class="def-category">
                             <div class="category-header">
@@ -167,14 +167,14 @@
                                 <p class="category-count">{{ getVisibleCount(category) }} definitions</p>
                             </div>
                             <div class="def-grid">
-                                <article v-for="def in getFilteredDefinitions(category)" 
-                                         :key="def.def_name" 
+                                <article v-for="def in getFilteredDefinitions(category)"
+                                         :key="def.id"
                                          class="def-item"
-                                         :class="{ expanded: expandedDefs.has(def.def_name) }"
-                                         :data-def-key="`${def.def_type}:${def.def_name}`"
-                                         @click="toggleDef(def.def_name)">
+                                         :class="{ expanded: expandedDefs.has(def.id) }"
+                                         :id="definitionElementId(def.id)"
+                                         @click="toggleDef(def.id)">
                                     <div class="def-header">
-                                        <h3 class="def-name">{{ def.def_name }}</h3>
+                                        <h3 class="def-name">{{ def.def_name || 'Unnamed definition' }}</h3>
                                         <span class="def-type">{{ def.def_type }}</span>
                                         <span class="extension-badge" :class="def.extension.toLowerCase()">{{ def.extension }}</span>
                                         <span v-if="def.label" class="def-label">
@@ -190,22 +190,22 @@
                                     </div>
 
                                     <div class="tags" v-if="def.tags && def.tags.length > 0">
-                                        <span v-for="tag in def.tags" :key="tag" 
-                                              class="tag" 
-                                              :class="{ 
-                                                  abstract: tag === 'Abstract', 
-                                                  parent: tag === 'Inherits' 
+                                        <span v-for="tag in def.tags" :key="tag"
+                                              class="tag"
+                                              :class="{
+                                                  abstract: tag === 'Abstract',
+                                                  parent: tag === 'Inherits'
                                               }">{{ tag }}</span>
                                     </div>
 
                                     <div class="file-path">{{ def.file_path }}</div>
-                                    
-                                    <div v-if="expandedDefs.has(def.def_name)" class="def-details">
+
+                                    <div v-if="expandedDefs.has(def.id)" class="def-details">
                                         <div v-if="def.references_in && def.references_in.length > 0" class="reference-section">
                                             <h4>Referenced by ({{ def.references_in.length }})</h4>
                                             <div class="reference-list">
-                                                <span v-for="refName in def.references_in" 
-                                                      :key="refName" 
+                                                <span v-for="refName in def.references_in"
+                                                      :key="refName"
                                                       class="reference-item"
                                                       @click.stop="scrollToDefByName(refName)">
                                                     {{ refName }}
@@ -213,12 +213,12 @@
                                                 </span>
                                             </div>
                                         </div>
-                                        
+
                                         <div v-if="def.references_out && def.references_out.length > 0" class="reference-section">
                                             <h4>References ({{ def.references_out.length }})</h4>
                                             <div class="reference-list">
-                                                <span v-for="refName in def.references_out" 
-                                                      :key="refName" 
+                                                <span v-for="refName in def.references_out"
+                                                      :key="refName"
                                                       class="reference-item"
                                                       @click.stop="scrollToDefByName(refName)">
                                                     {{ refName }}
@@ -226,18 +226,18 @@
                                                 </span>
                                             </div>
                                         </div>
-                                        
+
                                         <div v-if="def.code_references && def.code_references.length > 0" class="reference-section">
                                             <h4>C# References ({{ def.code_references.length }})</h4>
                                             <div class="reference-list">
-                                                <span v-for="className in def.code_references" 
-                                                      :key="className" 
+                                                <span v-for="className in def.code_references"
+                                                      :key="className"
                                                       class="code-reference-item">
                                                     {{ className }}
                                                 </span>
                                             </div>
                                         </div>
-                                        
+
                                         <div v-if="(!def.references_in || def.references_in.length === 0) && (!def.references_out || def.references_out.length === 0) && (!def.code_references || def.code_references.length === 0)" class="no-references">
                                             No references found
                                         </div>
@@ -246,19 +246,19 @@
                                             <div class="xml-header">
                                                 <h4>XML Definition</h4>
                                                 <div>
-                                                    <button class="btn xml-toggle" @click.stop="toggleXML(def.def_name)">
-                                                        {{ showXML.has(def.def_name) ? 'Hide XML' : 'Show XML' }}
+                                                    <button class="btn xml-toggle" @click.stop="toggleXML(def.id)">
+                                                        {{ showXML.has(def.id) ? 'Hide XML' : 'Show XML' }}
                                                     </button>
-                                                    <button v-if="showXML.has(def.def_name)" class="btn xml-copy" @click.stop="copyXML(def.raw_xml)">
+                                                    <button v-if="showXML.has(def.id)" class="btn xml-copy" @click.stop="copyXML(def.raw_xml)">
                                                         Copy XML
                                                     </button>
                                                 </div>
                                             </div>
-                                            <div v-if="showXML.has(def.def_name)" class="xml-display" v-html="formatXML(def.raw_xml)" @click.stop></div>
+                                            <div v-if="showXML.has(def.id)" class="xml-display" v-html="formatXML(def.raw_xml)" @click.stop></div>
                                         </div>
                                     </div>
-                                    
-                                    <div class="expand-indicator">{{ expandedDefs.has(def.def_name) ? '▲' : '▼' }}</div>
+
+                                    <div class="expand-indicator">{{ expandedDefs.has(def.id) ? '▲' : '▼' }}</div>
                                 </article>
                             </div>
                         </section>
@@ -266,7 +266,7 @@
                 </div>
             </main>
         </div>
-        
+
         <div v-if="!loading && !error" class="results-counter">
             {{ filteredDefinitionsCount }} of {{ stats.total_defs }} definitions
         </div>

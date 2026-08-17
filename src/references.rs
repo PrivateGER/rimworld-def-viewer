@@ -6,21 +6,27 @@ pub fn build_reference_mappings(definitions: &mut [RimWorldDef]) {
 
     let mut definitions_by_name: HashMap<String, Vec<usize>> = HashMap::new();
     for (index, definition) in definitions.iter().enumerate() {
-        definitions_by_name
-            .entry(definition.def_name.clone())
-            .or_default()
-            .push(index);
+        if let Some(def_name) = &definition.def_name {
+            definitions_by_name
+                .entry(def_name.clone())
+                .or_default()
+                .push(index);
+        }
     }
 
     let mut reference_count = 0;
     for index in 0..definitions.len() {
         let def_name = definitions[index].def_name.clone();
+        let source_name = def_name
+            .clone()
+            .unwrap_or_else(|| definitions[index].id.clone());
         let (references, code_references) = extract_references(&definitions[index].elements);
 
         let valid_references: Vec<String> = references
             .into_iter()
             .filter(|reference_name| {
-                definitions_by_name.contains_key(reference_name) && reference_name != &def_name
+                definitions_by_name.contains_key(reference_name)
+                    && def_name.as_ref() != Some(reference_name)
             })
             .collect();
 
@@ -33,7 +39,7 @@ pub fn build_reference_mappings(definitions: &mut [RimWorldDef]) {
                 for &reference_index in reference_indices {
                     definitions[reference_index]
                         .references_in
-                        .push(def_name.clone());
+                        .push(source_name.clone());
                 }
             }
         }
@@ -43,8 +49,11 @@ pub fn build_reference_mappings(definitions: &mut [RimWorldDef]) {
         let Some(parent_name) = definitions[index].parent_name.clone() else {
             continue;
         };
-        let child_name = definitions[index].def_name.clone();
-        if parent_name == child_name {
+        let child_name = definitions[index]
+            .def_name
+            .clone()
+            .unwrap_or_else(|| definitions[index].id.clone());
+        if definitions[index].def_name.as_ref() == Some(&parent_name) {
             continue;
         }
         let Some(parent_indices) = definitions_by_name.get(&parent_name) else {
@@ -124,7 +133,8 @@ mod tests {
 
     fn definition(name: &str, elements: Vec<DefElement>) -> RimWorldDef {
         RimWorldDef {
-            def_name: name.to_string(),
+            id: format!("Data/Core/Defs/{name}.xml#0"),
+            def_name: Some(name.to_string()),
             def_type: "ThingDef".to_string(),
             label: None,
             description: None,

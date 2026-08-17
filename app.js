@@ -30,6 +30,7 @@ createApp({
             categories: [],
             stats: { total_defs: 0, total_categories: 0, total_files: 0 },
             defsByName: {},
+            defsById: {},
 
             // Filters and Search
             searchQuery: '',
@@ -90,9 +91,14 @@ createApp({
 
                 // Build def name map for quick lookups
                 this.defsByName = {};
+                this.defsById = {};
                 for (const category of this.categories) {
                     for (const def of category.definitions) {
-                        this.defsByName[def.def_name] = { def, category: category.name };
+                        const defInfo = { def, category: category.name };
+                        this.defsById[def.id] = defInfo;
+                        if (def.def_name) {
+                            this.defsByName[def.def_name] = defInfo;
+                        }
                     }
                 }
 
@@ -128,7 +134,7 @@ createApp({
             if (this.searchQuery) {
                 const query = this.searchQuery.toLowerCase();
                 filtered = filtered.filter(def => {
-                    return def.def_name.toLowerCase().includes(query) ||
+                    return (def.def_name && def.def_name.toLowerCase().includes(query)) ||
                            (def.label && def.label.toLowerCase().includes(query)) ||
                            (def.description && def.description.toLowerCase().includes(query)) ||
                            (def.tags && def.tags.some(tag => tag.toLowerCase().includes(query))) ||
@@ -157,11 +163,11 @@ createApp({
             // Search is reactive, no debouncing needed for now
         },
         // Toggle Methods
-        toggleDef(defName) {
-            this.expandedDefs = this._toggleSet(this.expandedDefs, defName);
+        toggleDef(definitionId) {
+            this.expandedDefs = this._toggleSet(this.expandedDefs, definitionId);
         },
-        toggleXML(defName) {
-            this.showXML = this._toggleSet(this.showXML, defName);
+        toggleXML(definitionId) {
+            this.showXML = this._toggleSet(this.showXML, definitionId);
         },
         _toggleSet(set, item) {
             const newSet = new Set(set);
@@ -315,6 +321,11 @@ createApp({
                 return;
             }
 
+            this.scrollToDefinition(defInfo, true);
+        },
+        scrollToDefinition(defInfo, updateHash) {
+            const definitionId = defInfo.def.id;
+
             // Set the category to show the definition
             this.activeCategory = defInfo.category;
 
@@ -325,7 +336,7 @@ createApp({
 
             // Collapse all cards and expand only the target definition
             this.expandedDefs.clear();
-            this.expandedDefs.add(defName);
+            this.expandedDefs.add(definitionId);
             this.expandedDefs = new Set(this.expandedDefs);
 
             // Clear XML display state
@@ -333,24 +344,41 @@ createApp({
             this.showXML = new Set(this.showXML);
 
             // Update URL hash
-            window.location.hash = `#${defInfo.def.def_type}:${defName}`;
+            if (updateHash) {
+                window.location.hash = encodeURIComponent(definitionId);
+            }
 
             // Wait for Vue to update the DOM
             this.$nextTick(() => {
                 requestAnimationFrame(() => {
-                    this._scrollToElement(defInfo.def.def_type, defName);
+                    this._scrollToElement(definitionId);
                 });
             });
         },
         handleHashChange() {
-            const hash = window.location.hash.slice(1); // Remove the '#'
-            if (hash && hash.includes(':')) {
-                const [defType, defName] = hash.split(':', 2);
-                this.scrollToDefByName(defName);
+            const hash = window.location.hash.slice(1);
+            if (!hash) {
+                return;
+            }
+
+            let definitionId;
+            try {
+                definitionId = decodeURIComponent(hash);
+            } catch (error) {
+                console.warn('Invalid definition hash:', hash);
+                return;
+            }
+
+            const defInfo = this.defsById[definitionId];
+            if (defInfo) {
+                this.scrollToDefinition(defInfo, false);
             }
         },
-        _scrollToElement(defType, defName) {
-            const element = document.querySelector(`[data-def-key="${defType}:${defName}"]`);
+        definitionElementId(definitionId) {
+            return `def-${encodeURIComponent(definitionId)}`;
+        },
+        _scrollToElement(definitionId) {
+            const element = document.getElementById(this.definitionElementId(definitionId));
             if (element) {
                 element.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 // Add a highlight effect

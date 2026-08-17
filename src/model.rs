@@ -60,7 +60,8 @@ impl DefElement {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RimWorldDef {
-    pub def_name: String,
+    pub id: String,
+    pub def_name: Option<String>,
     pub def_type: String,
     pub label: Option<String>,
     pub description: Option<String>,
