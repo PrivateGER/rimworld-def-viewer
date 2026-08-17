@@ -265,6 +265,95 @@ body {
     border-color: var(--primary-color);
 }
 
+.overview-intro {
+    max-width: 68rem;
+    color: var(--text-secondary);
+}
+
+.overview-stats {
+    display: flex;
+    gap: 3rem;
+    margin: 2rem 0;
+    flex-wrap: wrap;
+}
+
+.overview-stat h3 {
+    margin-bottom: 0.25rem;
+    color: var(--primary-color);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.overview-stat p {
+    color: var(--text);
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.release-note {
+    display: grid;
+    grid-template-columns: minmax(14rem, 0.8fr) minmax(0, 1.7fr);
+    gap: 2.5rem;
+    margin: 2rem 0;
+    padding: 1.5rem;
+    background: var(--background-alt);
+    border: 1px solid var(--border);
+    border-radius: var(--border-radius);
+}
+
+.release-note-heading h3 {
+    margin-bottom: 0.5rem;
+    font-size: 1.25rem;
+    line-height: 1.25;
+}
+
+.release-note-heading > p:last-child,
+.release-note-item p,
+.legal-note {
+    color: var(--text-secondary);
+}
+
+.release-note-grid {
+    display: grid;
+    gap: 1.25rem;
+}
+
+.release-note-item {
+    display: grid;
+    grid-template-columns: 3.25rem 1fr;
+    gap: 1rem;
+    align-items: start;
+}
+
+.release-note-label {
+    padding: 0.25rem 0.4rem;
+    color: var(--primary-color);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.25rem;
+    font-family: 'Courier New', monospace;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-align: center;
+}
+
+.release-note-item h4 {
+    margin-bottom: 0.2rem;
+    font-size: 1rem;
+}
+
+.release-note-item p,
+.legal-note {
+    font-size: 0.875rem;
+}
+
+.legal-note {
+    max-width: 68rem;
+}
+
 .def-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
@@ -796,6 +885,12 @@ body {
         flex-direction: column;
         gap: 0.75rem;
         align-items: stretch;
+    }
+
+    .release-note {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+        padding: 1.5rem;
     }
 
     .filter-group {

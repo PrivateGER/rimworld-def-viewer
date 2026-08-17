@@ -143,20 +143,50 @@
                     <div v-else>
                         <section v-if="activeCategory === 'overview'" class="def-category">
                             <h2>Overview</h2>
-                            <p>This documentation contains all XML definitions from RimWorld. Use the search box above or navigation menu to find specific definitions, or apply filters to narrow down the display.</p>
+                            <p class="overview-intro">This documentation contains all XML definitions from RimWorld. Use the search box above or navigation menu to find specific definitions, or apply filters to narrow down the display.</p>
 
-                            <div class="overview-stats" style="display: flex; gap: 2rem; margin: 2rem 0; flex-wrap: wrap;">
+                            <div class="overview-stats">
                                 <div class="overview-stat">
-                                    <h3 style="margin: 0 0 0.5rem 0; color: var(--primary-color); font-size: 1.125rem;">Game Version</h3>
-                                    <p style="margin: 0; font-size: 1rem; color: var(--text);">{{ stats.game_version }}</p>
+                                    <h3>Game Version</h3>
+                                    <p>{{ stats.game_version }}</p>
                                 </div>
                                 <div class="overview-stat">
-                                    <h3 style="margin: 0 0 0.5rem 0; color: var(--primary-color); font-size: 1.125rem;">Last Updated</h3>
-                                    <p style="margin: 0; font-size: 1rem; color: var(--text);">{{ stats.generated_at }}</p>
+                                    <h3>Last Updated</h3>
+                                    <p>{{ stats.generated_at }}</p>
                                 </div>
                             </div>
 
-                            <p>Portions of the materials used to create this content are trademarks and copyrighted works of Ludeon Studios Inc. All rights reserved by Ludeon. This content is not official and is not endorsed by Ludeon.</p>
+                            <section class="release-note" aria-labelledby="release-note-title">
+                                <div class="release-note-heading">
+                                    <h3 id="release-note-title">Changelog</h3>
+                                    <p>The documentation now follows RimWorld's definition types much more closely, with reduced download size.</p>
+                                </div>
+                                <div class="release-note-grid">
+                                    <article class="release-note-item">
+                                        <span class="release-note-label">REF</span>
+                                        <div>
+                                            <h4>Smarter references</h4>
+                                            <p>Links use field type information where RimWorld provides it, reducing false matches.</p>
+                                        </div>
+                                    </article>
+                                    <article class="release-note-item">
+                                        <span class="release-note-label">XML</span>
+                                        <div>
+                                            <h4>Exact source XML</h4>
+                                            <p>Show XML preserves the original comments, entities, CDATA, and formatting for each definition.</p>
+                                        </div>
+                                    </article>
+                                    <article class="release-note-item">
+                                        <span class="release-note-label">LOAD</span>
+                                        <div>
+                                            <h4>Faster startup</h4>
+                                            <p>The searchable index loads first; full source XML is fetched only when needed.</p>
+                                        </div>
+                                    </article>
+                                </div>
+                            </section>
+
+                            <p class="legal-note">Portions of the materials used to create this content are trademarks and copyrighted works of Ludeon Studios Inc. All rights reserved by Ludeon. This content is not official and is not endorsed by Ludeon.</p>
                         </section>
 
                         <section v-for="category in visibleCategories" :key="category.name"
