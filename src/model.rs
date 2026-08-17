@@ -72,13 +72,27 @@ pub struct RimWorldDef {
     pub tags: Vec<String>,
     pub stats: Option<DefStats>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub references_out: Vec<String>,
+    pub references_out: Vec<DefinitionReference>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub references_in: Vec<String>,
+    pub references_in: Vec<DefinitionSummary>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub code_references: Vec<String>,
     pub raw_xml: String,
     pub extension: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DefinitionReference {
+    pub name: String,
+    pub targets: Vec<DefinitionSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DefinitionSummary {
+    pub id: String,
+    pub def_name: Option<String>,
+    pub def_type: String,
+    pub file_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

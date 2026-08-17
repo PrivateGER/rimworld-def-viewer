@@ -29,7 +29,6 @@ createApp({
             // Data
             categories: [],
             stats: { total_defs: 0, total_categories: 0, total_files: 0 },
-            defsByName: {},
             defsById: {},
 
             // Filters and Search
@@ -89,16 +88,12 @@ createApp({
                 this.categories = data.categories;
                 this.stats = data.stats;
 
-                // Build def name map for quick lookups
-                this.defsByName = {};
+                // Build definition ID map for navigation
                 this.defsById = {};
                 for (const category of this.categories) {
                     for (const def of category.definitions) {
                         const defInfo = { def, category: category.name };
                         this.defsById[def.id] = defInfo;
-                        if (def.def_name) {
-                            this.defsByName[def.def_name] = defInfo;
-                        }
                     }
                 }
 
@@ -314,10 +309,10 @@ createApp({
             }
             document.body.removeChild(textArea);
         },
-        scrollToDefByName(defName) {
-            const defInfo = this.defsByName[defName];
+        scrollToDefinitionById(definitionId) {
+            const defInfo = this.defsById[definitionId];
             if (!defInfo) {
-                console.warn(`Definition not found: ${defName}`);
+                console.warn(`Definition not found: ${definitionId}`);
                 return;
             }
 

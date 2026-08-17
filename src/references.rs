@@ -1,4 +1,4 @@
-use crate::model::{DefElement, RimWorldDef};
+use crate::model::{DefElement, DefinitionReference, DefinitionSummary, RimWorldDef};
 use std::collections::HashMap;
 
 pub fn build_reference_mappings(definitions: &mut [RimWorldDef]) {
@@ -14,74 +14,120 @@ pub fn build_reference_mappings(definitions: &mut [RimWorldDef]) {
         }
     }
 
+    let mut outgoing = vec![Vec::new(); definitions.len()];
+    let mut incoming = vec![Vec::new(); definitions.len()];
+    let mut code_references = vec![Vec::new(); definitions.len()];
     let mut reference_count = 0;
-    for index in 0..definitions.len() {
-        let def_name = definitions[index].def_name.clone();
-        let source_name = def_name
-            .clone()
-            .unwrap_or_else(|| definitions[index].id.clone());
-        let (references, code_references) = extract_references(&definitions[index].elements);
 
-        let valid_references: Vec<String> = references
-            .into_iter()
-            .filter(|reference_name| {
-                definitions_by_name.contains_key(reference_name)
-                    && def_name.as_ref() != Some(reference_name)
-            })
-            .collect();
+    for source_index in 0..definitions.len() {
+        let (reference_names, source_code_references) =
+            extract_references(&definitions[source_index].elements);
+        code_references[source_index] = source_code_references;
 
-        reference_count += valid_references.len();
-        definitions[index].references_out = valid_references.clone();
-        definitions[index].code_references = code_references;
-
-        for reference_name in valid_references {
-            if let Some(reference_indices) = definitions_by_name.get(&reference_name) {
-                for &reference_index in reference_indices {
-                    definitions[reference_index]
-                        .references_in
-                        .push(source_name.clone());
-                }
+        for reference_name in reference_names {
+            if add_reference(
+                source_index,
+                &reference_name,
+                definitions,
+                &definitions_by_name,
+                &mut outgoing,
+                &mut incoming,
+            ) {
+                reference_count += 1;
             }
         }
     }
 
-    for index in 0..definitions.len() {
-        let Some(parent_name) = definitions[index].parent_name.clone() else {
-            continue;
-        };
-        let child_name = definitions[index]
-            .def_name
-            .clone()
-            .unwrap_or_else(|| definitions[index].id.clone());
-        if definitions[index].def_name.as_ref() == Some(&parent_name) {
-            continue;
-        }
-        let Some(parent_indices) = definitions_by_name.get(&parent_name) else {
-            continue;
-        };
-
-        if !definitions[index].references_out.contains(&parent_name) {
-            definitions[index].references_out.push(parent_name);
-            definitions[index].references_out.sort();
+    for source_index in 0..definitions.len() {
+        if let Some(parent_name) = definitions[source_index].parent_name.clone()
+            && add_reference(
+                source_index,
+                &parent_name,
+                definitions,
+                &definitions_by_name,
+                &mut outgoing,
+                &mut incoming,
+            )
+        {
             reference_count += 1;
         }
+    }
 
-        for &parent_index in parent_indices {
-            if !definitions[parent_index]
-                .references_in
-                .contains(&child_name)
-            {
-                definitions[parent_index]
-                    .references_in
-                    .push(child_name.clone());
-            }
-        }
+    for index in 0..definitions.len() {
+        outgoing[index].sort_by(|left, right| left.name.cmp(&right.name));
+        incoming[index].sort_by(|left, right| left.id.cmp(&right.id));
+        definitions[index].references_out = std::mem::take(&mut outgoing[index]);
+        definitions[index].references_in = std::mem::take(&mut incoming[index]);
+        definitions[index].code_references = std::mem::take(&mut code_references[index]);
     }
 
     println!(
         "  ✓ Reference mappings built: {} references found",
         reference_count
     );
+}
+
+fn add_reference(
+    source_index: usize,
+    reference_name: &str,
+    definitions: &[RimWorldDef],
+    definitions_by_name: &HashMap<String, Vec<usize>>,
+    outgoing: &mut [Vec<DefinitionReference>],
+    incoming: &mut [Vec<DefinitionSummary>],
+) -> bool {
+    if outgoing[source_index]
+        .iter()
+        .any(|reference| reference.name == reference_name)
+    {
+        return false;
+    }
+
+    let Some(matching_indices) = definitions_by_name.get(reference_name) else {
+        return false;
+    };
+    let target_indices: Vec<usize> = matching_indices
+        .iter()
+        .copied()
+        .filter(|target_index| *target_index != source_index)
+        .collect();
+    if target_indices.is_empty() {
+        return false;
+    }
+
+    let mut targets: Vec<DefinitionSummary> = target_indices
+        .iter()
+        .map(|target_index| definition_summary(&definitions[*target_index]))
+        .collect();
+    targets.sort_by(|left, right| {
+        left.def_type
+            .cmp(&right.def_type)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+
+    if let [target_index] = target_indices.as_slice() {
+        let source = definition_summary(&definitions[source_index]);
+        if !incoming[*target_index]
+            .iter()
+            .any(|candidate| candidate.id == source.id)
+        {
+            incoming[*target_index].push(source);
+        }
+    }
+
+    outgoing[source_index].push(DefinitionReference {
+        name: reference_name.to_string(),
+        targets,
+    });
+    true
+}
+
+fn definition_summary(definition: &RimWorldDef) -> DefinitionSummary {
+    DefinitionSummary {
+        id: definition.id.clone(),
+        def_name: definition.def_name.clone(),
+        def_type: definition.def_type.clone(),
+        file_path: definition.file_path.clone(),
+    }
 }
 
 fn extract_references(elements: &[DefElement]) -> (Vec<String>, Vec<String>) {
@@ -156,25 +202,34 @@ mod tests {
         }
     }
 
-    #[test]
-    fn builds_outgoing_incoming_and_code_references() {
-        let reference_element = DefElement {
+    fn reference_element(target: &str) -> DefElement {
+        DefElement {
             name: "targetDef".to_string(),
             attributes: HashMap::from([("Class".to_string(), "Example.Component".to_string())]),
-            content: Some("Target".to_string()),
+            content: Some(target.to_string()),
             children: Vec::new(),
             depth: 0,
-        };
+        }
+    }
+
+    #[test]
+    fn builds_outgoing_incoming_and_code_references() {
         let mut definitions = vec![
-            definition("Source", vec![reference_element]),
+            definition("Source", vec![reference_element("Target")]),
             definition("Target", Vec::new()),
         ];
 
         build_reference_mappings(&mut definitions);
 
-        assert_eq!(definitions[0].references_out, ["Target"]);
+        assert_eq!(definitions[0].references_out.len(), 1);
+        assert_eq!(definitions[0].references_out[0].name, "Target");
+        assert_eq!(
+            definitions[0].references_out[0].targets[0].id,
+            definitions[1].id
+        );
         assert_eq!(definitions[0].code_references, ["Example.Component"]);
-        assert_eq!(definitions[1].references_in, ["Source"]);
+        assert_eq!(definitions[1].references_in.len(), 1);
+        assert_eq!(definitions[1].references_in[0].id, definitions[0].id);
     }
 
     #[test]
@@ -186,7 +241,31 @@ mod tests {
 
         build_reference_mappings(&mut definitions);
 
-        assert_eq!(definitions[1].references_out, ["Parent"]);
-        assert_eq!(definitions[0].references_in, ["Child"]);
+        assert_eq!(definitions[1].references_out.len(), 1);
+        assert_eq!(definitions[1].references_out[0].name, "Parent");
+        assert_eq!(
+            definitions[1].references_out[0].targets[0].id,
+            definitions[0].id
+        );
+        assert_eq!(definitions[0].references_in[0].id, definitions[1].id);
+    }
+
+    #[test]
+    fn preserves_ambiguous_candidates_without_asserting_incoming_edges() {
+        let source = definition("Source", vec![reference_element("Shared")]);
+        let mut first = definition("Shared", Vec::new());
+        let mut second = definition("Shared", Vec::new());
+        first.id = "Data/Core/Defs/First.xml#0".to_string();
+        second.id = "Data/Core/Defs/Second.xml#0".to_string();
+        second.def_type = "PawnKindDef".to_string();
+        let mut definitions = vec![source, first, second];
+
+        build_reference_mappings(&mut definitions);
+
+        let reference = &definitions[0].references_out[0];
+        assert_eq!(reference.name, "Shared");
+        assert_eq!(reference.targets.len(), 2);
+        assert!(definitions[1].references_in.is_empty());
+        assert!(definitions[2].references_in.is_empty());
     }
 }
