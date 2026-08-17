@@ -37,8 +37,17 @@ pub struct RimWorldDef {
     pub extension: String,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum ReferenceKind {
+    Definition,
+    Parent,
+    Heuristic,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DefinitionReference {
+    pub kind: ReferenceKind,
     pub name: String,
     pub targets: Vec<DefinitionSummary>,
 }

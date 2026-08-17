@@ -1,4 +1,6 @@
-use crate::model::{DefElement, DefinitionReference, DefinitionSummary, RimWorldDef};
+use crate::model::{
+    DefElement, DefinitionReference, DefinitionSummary, ReferenceKind, RimWorldDef,
+};
 use crate::schema::{CustomLoader, CustomLoaderRule, ManagedType, ReferenceSchema};
 use std::collections::{HashMap, HashSet};
 
@@ -31,8 +33,14 @@ pub fn build_reference_mappings(definitions: &mut [RimWorldDef], schema: Option<
         code_references[source_index] = analysis.code_references;
 
         for (reference_name, expected_types) in analysis.references {
+            let kind = if expected_types.is_some() {
+                ReferenceKind::Definition
+            } else {
+                ReferenceKind::Heuristic
+            };
             if graph.add_reference(
                 source_index,
+                kind,
                 &reference_name,
                 expected_types.as_ref(),
                 &definitions_by_name,
@@ -46,6 +54,7 @@ pub fn build_reference_mappings(definitions: &mut [RimWorldDef], schema: Option<
         if let Some(parent_name) = definition.parent_name.clone()
             && graph.add_reference(
                 source_index,
+                ReferenceKind::Parent,
                 &parent_name,
                 None,
                 &definitions_by_inheritance_name,
@@ -57,7 +66,11 @@ pub fn build_reference_mappings(definitions: &mut [RimWorldDef], schema: Option<
 
     let (mut outgoing, mut incoming) = (graph.outgoing, graph.incoming);
     for index in 0..definitions.len() {
-        outgoing[index].sort_by(|left, right| left.name.cmp(&right.name));
+        outgoing[index].sort_by(|left, right| {
+            left.name
+                .cmp(&right.name)
+                .then_with(|| left.kind.cmp(&right.kind))
+        });
         incoming[index].sort_by(|left, right| left.id.cmp(&right.id));
         definitions[index].references_out = std::mem::take(&mut outgoing[index]);
         definitions[index].references_in = std::mem::take(&mut incoming[index]);
@@ -90,13 +103,14 @@ impl<'a> ReferenceGraph<'a> {
     fn add_reference(
         &mut self,
         source_index: usize,
+        kind: ReferenceKind,
         reference_name: &str,
         expected_types: Option<&HashSet<String>>,
         definitions_by_name: &HashMap<String, Vec<usize>>,
     ) -> bool {
         if self.outgoing[source_index]
             .iter()
-            .any(|reference| reference.name == reference_name)
+            .any(|reference| reference.kind == kind && reference.name == reference_name)
         {
             return false;
         }
@@ -135,7 +149,9 @@ impl<'a> ReferenceGraph<'a> {
                 .then_with(|| left.id.cmp(&right.id))
         });
 
-        if let [target_index] = target_indices.as_slice() {
+        if kind != ReferenceKind::Heuristic
+            && let [target_index] = target_indices.as_slice()
+        {
             let source = definition_summary(&self.definitions[source_index]);
             if !self.incoming[*target_index]
                 .iter()
@@ -146,6 +162,7 @@ impl<'a> ReferenceGraph<'a> {
         }
 
         self.outgoing[source_index].push(DefinitionReference {
+            kind,
             name: reference_name.to_string(),
             targets,
         });
@@ -239,6 +256,10 @@ fn analyze_value(
                 return;
             }
 
+            if schema.is_enum_type(declared_type) {
+                return;
+            }
+
             let effective_type = element
                 .attributes
                 .get("Class")
@@ -328,18 +349,21 @@ fn add_typed_reference(
     if name.is_empty() {
         return;
     }
-    if let Some(types) = references
+    let types = references
         .entry(name.to_string())
-        .or_insert_with(|| Some(HashSet::new()))
-        .as_mut()
-    {
-        types.insert(expected_type.to_string());
+        .or_insert_with(|| Some(HashSet::new()));
+    if types.is_none() {
+        *types = Some(HashSet::new());
     }
+    types
+        .as_mut()
+        .expect("typed reference should have an expected-type set")
+        .insert(expected_type.to_string());
 }
 
 fn add_heuristic_reference(references: &mut HashMap<String, Option<HashSet<String>>>, name: &str) {
     if !name.is_empty() {
-        references.insert(name.to_string(), None);
+        references.entry(name.to_string()).or_insert(None);
     }
 }
 
@@ -502,6 +526,11 @@ mod tests {
                                 "Verse.ThingDefCountClass".to_string(),
                             ))),
                         },
+                        ManagedField {
+                            name: "workTags".to_string(),
+                            aliases: Vec::new(),
+                            value_type: ManagedType::Named("Verse.WorkTags".to_string()),
+                        },
                     ],
                     has_custom_loader: false,
                 },
@@ -517,6 +546,13 @@ mod tests {
                 "Verse.AbilityDef".to_string(),
                 ManagedTypeInfo {
                     base_type: Some("Verse.Def".to_string()),
+                    ..ManagedTypeInfo::default()
+                },
+            ),
+            (
+                "Verse.WorkTags".to_string(),
+                ManagedTypeInfo {
+                    base_type: Some("System.Enum".to_string()),
                     ..ManagedTypeInfo::default()
                 },
             ),
@@ -586,12 +622,15 @@ mod tests {
         assert_eq!(definitions[0].references_out.len(), 1);
         assert_eq!(definitions[0].references_out[0].name, "Target");
         assert_eq!(
+            definitions[0].references_out[0].kind,
+            ReferenceKind::Heuristic
+        );
+        assert_eq!(
             definitions[0].references_out[0].targets[0].id,
             definitions[1].id
         );
         assert_eq!(definitions[0].code_references, ["Example.Component"]);
-        assert_eq!(definitions[1].references_in.len(), 1);
-        assert_eq!(definitions[1].references_in[0].id, definitions[0].id);
+        assert!(definitions[1].references_in.is_empty());
     }
 
     #[test]
@@ -607,11 +646,47 @@ mod tests {
 
         assert_eq!(definitions[1].references_out.len(), 1);
         assert_eq!(definitions[1].references_out[0].name, "Parent");
+        assert_eq!(definitions[1].references_out[0].kind, ReferenceKind::Parent);
         assert_eq!(
             definitions[1].references_out[0].targets[0].id,
             definitions[0].id
         );
         assert_eq!(definitions[0].references_in[0].id, definitions[1].id);
+    }
+
+    #[test]
+    fn keeps_parent_and_definition_edges_with_the_same_name_separate() {
+        let mut parent = definition("UnusedDefName", Vec::new());
+        parent.def_name = None;
+        parent.inheritance_name = Some("Parent".to_string());
+
+        let mut named_definition = definition("Parent", Vec::new());
+        named_definition.def_type = "ThingCategoryDef".to_string();
+
+        let mut child = definition(
+            "Child",
+            vec![element(
+                "thingCategories",
+                None,
+                vec![element("li", Some("Parent"), Vec::new())],
+            )],
+        );
+        child.parent_name = Some("Parent".to_string());
+        let mut definitions = vec![parent, named_definition, child];
+
+        let schema = typed_schema();
+        build_reference_mappings(&mut definitions, Some(&schema));
+
+        let references = &definitions[2].references_out;
+        assert_eq!(references.len(), 2);
+        assert_eq!(references[0].name, "Parent");
+        assert_eq!(references[0].kind, ReferenceKind::Definition);
+        assert_eq!(references[0].targets[0].id, definitions[1].id);
+        assert_eq!(references[1].name, "Parent");
+        assert_eq!(references[1].kind, ReferenceKind::Parent);
+        assert_eq!(references[1].targets[0].id, definitions[0].id);
+        assert_eq!(definitions[0].references_in[0].id, definitions[2].id);
+        assert_eq!(definitions[1].references_in[0].id, definitions[2].id);
     }
 
     #[test]
@@ -650,7 +725,7 @@ mod tests {
 
         assert_eq!(definitions[0].references_out.len(), 1);
         assert_eq!(definitions[0].references_out[0].name, "ConcreteName");
-        assert_eq!(definitions[1].references_in.len(), 1);
+        assert!(definitions[1].references_in.is_empty());
     }
 
     #[test]
@@ -685,6 +760,66 @@ mod tests {
         assert!(definitions[1].references_in.is_empty());
         assert_eq!(definitions[2].references_in.len(), 1);
         assert!(definitions[3].references_in.is_empty());
+    }
+
+    #[test]
+    fn typed_evidence_dominates_heuristics_in_any_traversal_order() {
+        for typed_first in [true, false] {
+            let typed = element(
+                "thingCategories",
+                None,
+                vec![element("li", Some("Shared"), Vec::new())],
+            );
+            let heuristic = element("unknownModField", Some("Shared"), Vec::new());
+            let elements = if typed_first {
+                vec![typed, heuristic]
+            } else {
+                vec![heuristic, typed]
+            };
+            let source = definition("Source", elements);
+            let mut target = definition("Shared", Vec::new());
+            target.def_type = "ThingCategoryDef".to_string();
+            let mut definitions = vec![source, target];
+
+            let schema = typed_schema();
+            build_reference_mappings(&mut definitions, Some(&schema));
+
+            assert_eq!(definitions[0].references_out.len(), 1);
+            assert_eq!(
+                definitions[0].references_out[0].kind,
+                ReferenceKind::Definition
+            );
+            assert_eq!(
+                definitions[0].references_out[0].targets[0].id,
+                definitions[1].id
+            );
+            assert_eq!(definitions[1].references_in[0].id, definitions[0].id);
+        }
+    }
+
+    #[test]
+    fn ignores_enum_values_that_collide_with_definition_names() {
+        let source = definition(
+            "Source",
+            vec![element(
+                "workTags",
+                None,
+                vec![element("li", Some("Social"), Vec::new())],
+            )],
+        );
+        let mut joy = definition("Social", Vec::new());
+        joy.def_type = "JoyKindDef".to_string();
+        let mut skill = definition("Social", Vec::new());
+        skill.id = "Data/Core/Defs/SkillDefs/Social.xml#0".to_string();
+        skill.def_type = "SkillDef".to_string();
+        let mut definitions = vec![source, joy, skill];
+
+        let schema = typed_schema();
+        build_reference_mappings(&mut definitions, Some(&schema));
+
+        assert!(definitions[0].references_out.is_empty());
+        assert!(definitions[1].references_in.is_empty());
+        assert!(definitions[2].references_in.is_empty());
     }
 
     #[test]

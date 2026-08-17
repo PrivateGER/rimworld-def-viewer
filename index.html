@@ -28,7 +28,7 @@
                     <div class="sidebar-title">RimWorld Docs</div>
                     <div class="sidebar-subtitle">{{ stats.total_defs }} definitions</div>
                     <div v-if="searchQuery || typeFilter !== 'all' || extensionFilter !== 'all'" class="sidebar-filter-info">
-                        {{ categories.length - filteredCategoriesForNav.length }} categories hidden
+                        {{ categories.length - visibleCategories.length }} categories hidden
                     </div>
                 </div>
                 <nav class="nav-links">
@@ -38,7 +38,7 @@
                            Overview
                         </a>
                     </li>
-                    <li v-for="category in filteredCategoriesForNav" :key="category.name">
+                    <li v-for="category in visibleCategories" :key="category.name">
                         <a @click="setActiveCategory(category.name)"
                            :class="{ active: activeCategory === category.name }">
                             {{ category.display_name }} ({{ getVisibleCount(category) }})
@@ -189,8 +189,7 @@
                             <p class="legal-note">Portions of the materials used to create this content are trademarks and copyrighted works of Ludeon Studios Inc. All rights reserved by Ludeon. This content is not official and is not endorsed by Ludeon.</p>
                         </section>
 
-                        <section v-for="category in visibleCategories" :key="category.name"
-                                 v-show="activeCategory === 'all' || activeCategory === category.name"
+                        <section v-for="category in displayedCategories" :key="category.name"
                                  class="def-category">
                             <div class="category-header">
                                 <h2 class="category-title">{{ category.display_name }}</h2>
@@ -216,7 +215,17 @@
 
                                     <div v-if="def.parent_name" class="def-parent">
                                         <strong class="def-parent-label">Parent:</strong>
-                                        <span class="def-parent-name">{{ def.parent_name }}</span>
+                                        <template v-if="parentReference(def)">
+                                            <button v-for="targetId in parentReference(def).targets"
+                                                    :key="targetId"
+                                                    type="button"
+                                                    class="def-parent-link"
+                                                    :title="definitionById(targetId)?.file_path"
+                                                    @click.stop="scrollToDefinitionById(targetId)">
+                                                {{ definitionDisplayName(definitionById(targetId)) }}
+                                            </button>
+                                        </template>
+                                        <span v-else class="def-parent-name">{{ def.parent_name }}</span>
                                     </div>
 
                                     <div class="tags" v-if="def.tags && def.tags.length > 0">
@@ -245,10 +254,10 @@
                                             </div>
                                         </div>
 
-                                        <div v-if="def.references_out && def.references_out.length > 0" class="reference-section">
-                                            <h4>References ({{ def.references_out.length }})</h4>
+                                        <div v-if="referencesByKind(def, 'definition').length > 0" class="reference-section">
+                                            <h4>References ({{ referencesByKind(def, 'definition').length }})</h4>
                                             <div class="reference-list">
-                                                <template v-for="reference in def.references_out" :key="reference.name">
+                                                <template v-for="reference in referencesByKind(def, 'definition')" :key="reference.name">
                                                     <span v-for="targetId in reference.targets"
                                                           :key="targetId"
                                                           class="reference-item"
@@ -257,6 +266,24 @@
                                                         {{ reference.name }}
                                                         <span class="ref-type-badge">
                                                             {{ definitionById(targetId)?.def_type }}{{ reference.targets.length > 1 ? ' · candidate' : '' }}
+                                                        </span>
+                                                    </span>
+                                                </template>
+                                            </div>
+                                        </div>
+
+                                        <div v-if="referencesByKind(def, 'heuristic').length > 0" class="reference-section">
+                                            <h4>Possible references ({{ referencesByKind(def, 'heuristic').length }})</h4>
+                                            <div class="reference-list">
+                                                <template v-for="reference in referencesByKind(def, 'heuristic')" :key="reference.name">
+                                                    <span v-for="targetId in reference.targets"
+                                                          :key="targetId"
+                                                          class="reference-item"
+                                                          :title="definitionById(targetId)?.file_path"
+                                                          @click.stop="scrollToDefinitionById(targetId)">
+                                                        {{ reference.name }}
+                                                        <span class="ref-type-badge">
+                                                            {{ definitionById(targetId)?.def_type }} · possible
                                                         </span>
                                                     </span>
                                                 </template>

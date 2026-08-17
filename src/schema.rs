@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, bail};
 use dotnetdll::prelude::{
     AlwaysFailsResolver, BaseType, FixedArg, MemberType, ReadOptions, Resolution, ResolvedDebug,
-    TypeSource,
+    TypeSource, UserType,
 };
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -77,7 +77,7 @@ impl ReferenceSchema {
 
         let mut types = HashMap::new();
         for definition in &resolution.type_definitions {
-            let name = definition.type_name();
+            let name = definition.nested_type_name(&resolution);
             if name == "<Module>" {
                 continue;
             }
@@ -179,6 +179,10 @@ impl ReferenceSchema {
 
     pub(crate) fn is_def_type(&self, type_name: &str) -> bool {
         self.is_assignable(type_name, DEF_TYPE)
+    }
+
+    pub(crate) fn is_enum_type(&self, type_name: &str) -> bool {
+        self.is_assignable(type_name, "System.Enum")
     }
 
     pub(crate) fn is_assignable(&self, concrete_type: &str, expected_type: &str) -> bool {
@@ -290,10 +294,19 @@ fn short_type_name(name: &str) -> &str {
     name.rsplit(['.', '/']).next().unwrap_or(name)
 }
 
+fn user_type_name(user_type: &UserType, resolution: &Resolution<'_>) -> String {
+    let resolved_name = user_type.show(resolution);
+    if let Some((_, type_name)) = resolved_name.rsplit_once(']') {
+        type_name.to_string()
+    } else {
+        resolved_name
+    }
+}
+
 fn type_source_name(source: &TypeSource<MemberType>, resolution: &Resolution<'_>) -> String {
     match source {
-        TypeSource::User(user_type) => user_type.type_name(resolution),
-        TypeSource::Generic { base, .. } => base.type_name(resolution),
+        TypeSource::User(user_type) => user_type_name(user_type, resolution),
+        TypeSource::Generic { base, .. } => user_type_name(base, resolution),
     }
 }
 
@@ -304,23 +317,16 @@ fn managed_type(member_type: &MemberType, resolution: &Resolution<'_>) -> Manage
 
     match base_type.as_ref() {
         BaseType::Type { source, .. } => match source {
-            TypeSource::User(user_type) => ManagedType::Named(user_type.type_name(resolution)),
-            TypeSource::Generic { base, parameters } => {
-                let base_name = base.type_name(resolution);
-                let mut parameters = parameters
-                    .iter()
-                    .map(|parameter| managed_type(parameter, resolution));
-                if base_name == "System.Collections.Generic.List`1" {
-                    ManagedType::List(Box::new(parameters.next().unwrap_or(ManagedType::Unknown)))
-                } else if base_name == "System.Collections.Generic.Dictionary`2" {
-                    ManagedType::Dictionary(
-                        Box::new(parameters.next().unwrap_or(ManagedType::Unknown)),
-                        Box::new(parameters.next().unwrap_or(ManagedType::Unknown)),
-                    )
-                } else {
-                    ManagedType::Named(base_name)
-                }
+            TypeSource::User(user_type) => {
+                ManagedType::Named(user_type_name(user_type, resolution))
             }
+            TypeSource::Generic { base, parameters } => managed_generic_type(
+                user_type_name(base, resolution),
+                parameters
+                    .iter()
+                    .map(|parameter| managed_type(parameter, resolution))
+                    .collect(),
+            ),
         },
         BaseType::Vector(_, item_type) | BaseType::Array(item_type, _) => {
             ManagedType::Array(Box::new(managed_type(item_type, resolution)))
@@ -342,6 +348,22 @@ fn managed_type(member_type: &MemberType, resolution: &Resolution<'_>) -> Manage
         | BaseType::Object
         | BaseType::String => ManagedType::Primitive,
         BaseType::ValuePointer(_, _) | BaseType::FunctionPointer(_) => ManagedType::Unknown,
+    }
+}
+
+fn managed_generic_type(base_name: String, parameters: Vec<ManagedType>) -> ManagedType {
+    let mut parameters = parameters.into_iter();
+    if base_name == "System.Collections.Generic.List`1" {
+        ManagedType::List(Box::new(parameters.next().unwrap_or(ManagedType::Unknown)))
+    } else if base_name == "System.Collections.Generic.Dictionary`2" {
+        ManagedType::Dictionary(
+            Box::new(parameters.next().unwrap_or(ManagedType::Unknown)),
+            Box::new(parameters.next().unwrap_or(ManagedType::Unknown)),
+        )
+    } else if base_name.ends_with(".SlateRef`1") {
+        parameters.next().unwrap_or(ManagedType::Unknown)
+    } else {
+        ManagedType::Named(base_name)
     }
 }
 
@@ -400,6 +422,13 @@ mod tests {
                     ..ManagedTypeInfo::default()
                 },
             ),
+            (
+                "Verse.WorkTags".to_string(),
+                ManagedTypeInfo {
+                    base_type: Some("System.Enum".to_string()),
+                    ..ManagedTypeInfo::default()
+                },
+            ),
         ]))
     }
 
@@ -427,6 +456,8 @@ mod tests {
         assert!(schema.is_def_type("Verse.SpecialThingDef"));
         assert!(schema.is_assignable("Verse.SpecialThingDef", "Verse.ThingDef"));
         assert!(!schema.is_assignable("Verse.ThingDef", "Verse.SpecialThingDef"));
+        assert!(schema.is_enum_type("Verse.WorkTags"));
+        assert!(!schema.is_enum_type("Verse.ThingDef"));
     }
 
     #[test]
@@ -455,6 +486,21 @@ mod tests {
         assert_eq!(
             schema.custom_loader("Example.ModLoader"),
             CustomLoader::Unknown
+        );
+    }
+
+    #[test]
+    fn unwraps_slate_ref_generic_values() {
+        let list_type = ManagedType::List(Box::new(ManagedType::Named(
+            "RimWorld.QuestGen.PawnKindOption".to_string(),
+        )));
+
+        assert_eq!(
+            managed_generic_type(
+                "RimWorld.QuestGen.SlateRef`1".to_string(),
+                vec![list_type.clone()],
+            ),
+            list_type
         );
     }
 }

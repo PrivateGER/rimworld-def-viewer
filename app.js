@@ -62,25 +62,34 @@ createApp({
         }
     },
     computed: {
-        visibleCategories() {
-            if (!this.searchQuery && this.typeFilter === 'all' && this.extensionFilter === 'all') {
-                return this.categories;
-            }
-
-            return this.categories.filter(category => {
-                const filteredDefs = this.getFilteredDefinitions(category);
-                return filteredDefs.length > 0;
-            });
+        hasActiveFilters() {
+            return Boolean(
+                this.searchQuery ||
+                this.typeFilter !== 'all' ||
+                this.extensionFilter !== 'all'
+            );
         },
-        filteredCategoriesForNav() {
-            if (!this.searchQuery && this.typeFilter === 'all' && this.extensionFilter === 'all') {
+        visibleCategories() {
+            if (!this.hasActiveFilters) {
                 return this.categories;
             }
 
-            return this.categories.filter(category => {
-                const filteredDefs = this.getFilteredDefinitions(category);
-                return filteredDefs.length > 0;
-            });
+            return this.categories.filter(category =>
+                this.getFilteredDefinitions(category).length > 0
+            );
+        },
+        displayedCategories() {
+            if (this.activeCategory === 'overview') {
+                return [];
+            }
+            if (this.activeCategory === 'all') {
+                return this.visibleCategories;
+            }
+
+            const category = this.visibleCategories.find(
+                candidate => candidate.name === this.activeCategory
+            );
+            return category ? [category] : [];
         },
         filteredDefinitionsCount() {
             return this.visibleCategories.reduce((total, category) => {
@@ -122,7 +131,7 @@ createApp({
                 for (const category of this.categories) {
                     for (const def of category.definitions) {
                         for (const reference of def.references_out) {
-                            if (reference.targets.length === 1) {
+                            if (reference.kind !== 'heuristic' && reference.targets.length === 1) {
                                 const target = this.definitionById(reference.targets[0]);
                                 if (target && !target.references_in.includes(def.id)) {
                                     target.references_in.push(def.id);
@@ -153,9 +162,11 @@ createApp({
         },
         setTypeFilter(filter) {
             this.typeFilter = filter;
+            this._syncFilteredCategory();
         },
         setExtensionFilter(filter) {
             this.extensionFilter = filter;
+            this._syncFilteredCategory();
         },
         getFilteredDefinitions(category) {
             let filtered = category.definitions;
@@ -196,8 +207,21 @@ createApp({
         definitionDisplayName(definition) {
             return definition?.def_name || definition?.inheritance_name || 'Unnamed definition';
         },
+        referencesByKind(definition, kind) {
+            return definition.references_out.filter(reference => reference.kind === kind);
+        },
+        parentReference(definition) {
+            return definition.references_out.find(reference => reference.kind === 'parent');
+        },
         performSearch() {
-            // Search is reactive, no debouncing needed for now
+            this._syncFilteredCategory();
+        },
+        _syncFilteredCategory() {
+            if (this.hasActiveFilters) {
+                this.activeCategory = 'all';
+            } else if (this.activeCategory === 'all') {
+                this.activeCategory = 'overview';
+            }
         },
         // Toggle Methods
         toggleDef(definitionId) {

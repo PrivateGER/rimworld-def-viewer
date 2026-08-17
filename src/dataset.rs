@@ -1,4 +1,4 @@
-use crate::model::{DefinitionReference, RimWorldDef};
+use crate::model::{DefinitionReference, ReferenceKind, RimWorldDef};
 use anyhow::Result;
 use chrono::Utc;
 use serde::Serialize;
@@ -221,6 +221,7 @@ impl<'a> From<&'a RimWorldDef> for DefinitionPayload<'a> {
 
 #[derive(Serialize)]
 struct ReferencePayload<'a> {
+    kind: &'a ReferenceKind,
     name: &'a str,
     targets: Vec<&'a str>,
 }
@@ -228,6 +229,7 @@ struct ReferencePayload<'a> {
 impl<'a> From<&'a DefinitionReference> for ReferencePayload<'a> {
     fn from(reference: &'a DefinitionReference) -> Self {
         Self {
+            kind: &reference.kind,
             name: &reference.name,
             targets: reference
                 .targets
@@ -306,6 +308,7 @@ mod tests {
         abstract_definition
             .references_out
             .push(DefinitionReference {
+                kind: ReferenceKind::Definition,
                 name: "Alpha".to_string(),
                 targets: vec![alpha_summary],
             });
@@ -338,6 +341,10 @@ mod tests {
         assert_eq!(
             categories[0]["definitions"][1]["references_out"][0]["targets"][0],
             categories[0]["definitions"][0]["id"]
+        );
+        assert_eq!(
+            categories[0]["definitions"][1]["references_out"][0]["kind"],
+            "definition"
         );
         assert!(categories[0].get("count").is_none());
         assert!(categories[1]["definitions"][0].get("def_name").is_none());
