@@ -44,7 +44,7 @@ impl DefParser {
         }
     }
 
-    fn parse_xml_file(&mut self, file_path: &Path) -> Result<()> {
+    fn parse_xml_file(&self, file_path: &Path) -> Result<Vec<RimWorldDef>> {
         let content = fs::read_to_string(file_path)?;
         let mut reader = Reader::from_str(&content);
         reader.trim_text(true);
@@ -53,6 +53,7 @@ impl DefParser {
         let mut buf = Vec::new();
         let mut element_stack = Vec::new();
         let mut in_defs = false;
+        let mut parsed_defs = Vec::new();
 
         loop {
             match reader.read_event_into(&mut buf) {
@@ -160,7 +161,7 @@ impl DefParser {
                                     .to_string()
                             };
 
-                            self.parsed_defs.push(RimWorldDef {
+                            parsed_defs.push(RimWorldDef {
                                 def_name,
                                 def_type: element.name.clone(),
                                 label,
@@ -197,7 +198,7 @@ impl DefParser {
             buf.clear();
         }
 
-        Ok(())
+        Ok(parsed_defs)
     }
 
     fn append_content(element_stack: &mut [DefElement], text: &str) {
@@ -227,12 +228,11 @@ impl DefParser {
             if entry.file_type().is_file() && entry.path().extension().unwrap_or_default() == "xml"
             {
                 file_count += 1;
-                let initial_def_count = self.parsed_defs.len();
-
                 match self.parse_xml_file(entry.path()) {
-                    Ok(_) => {
+                    Ok(mut parsed_defs) => {
                         processed_count += 1;
-                        let new_defs = self.parsed_defs.len() - initial_def_count;
+                        let new_defs = parsed_defs.len();
+                        self.parsed_defs.append(&mut parsed_defs);
                         if new_defs > 0 {
                             println!(
                                 "  ✓ {}: {} definitions",
@@ -258,6 +258,14 @@ impl DefParser {
         println!("  Files processed: {}", processed_count);
         println!("  Errors: {}", error_count);
         println!("  Total definitions: {}", self.parsed_defs.len());
+
+        if error_count > 0 {
+            return Err(anyhow::anyhow!(
+                "Failed to parse {} of {} XML files",
+                error_count,
+                file_count
+            ));
+        }
 
         Ok(())
     }
@@ -355,13 +363,23 @@ mod tests {
         ));
         fs::write(&file_path, xml)?;
 
-        let mut parser = DefParser::new(std::env::temp_dir().to_string_lossy().into_owned());
+        let parser = DefParser::new(std::env::temp_dir().to_string_lossy().into_owned());
         let parse_result = parser.parse_xml_file(&file_path);
         let _ = fs::remove_file(&file_path);
-        parse_result?;
+        let mut parsed_defs = parse_result?;
 
-        assert_eq!(parser.parsed_defs.len(), 1);
-        Ok(parser.parsed_defs.remove(0))
+        assert_eq!(parsed_defs.len(), 1);
+        Ok(parsed_defs.remove(0))
+    }
+
+    fn unique_temp_directory(name: &str) -> Result<std::path::PathBuf> {
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "rimworld-def-viewer-{name}-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(directory.join("Data/Core/Defs"))?;
+        Ok(directory)
     }
 
     #[test]
@@ -503,6 +521,29 @@ mod tests {
                 .contains(r#"note="A &amp; B &quot;quoted&quot;""#),
             "reconstructed XML escaped the attribute incorrectly: {}",
             parsed_def.raw_xml
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_a_malformed_file_without_retaining_partial_definitions() -> Result<()> {
+        let rimworld_path = unique_temp_directory("malformed")?;
+        fs::write(
+            rimworld_path.join("Data/Core/Defs/Broken.xml"),
+            r#"<Defs>
+                <ThingDef><defName>MustBeRolledBack</defName></ThingDef>
+                <ThingDef><defName>NeverCompleted</defName>
+            </Defs>"#,
+        )?;
+
+        let mut parser = DefParser::new(rimworld_path.to_string_lossy().into_owned());
+        let scan_result = parser.scan_defs_directory();
+        let _ = fs::remove_dir_all(&rimworld_path);
+
+        assert!(scan_result.is_err(), "malformed input should fail the scan");
+        assert!(
+            parser.parsed_defs.is_empty(),
+            "definitions from a malformed file must not be committed"
         );
         Ok(())
     }
