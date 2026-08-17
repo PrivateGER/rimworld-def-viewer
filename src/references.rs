@@ -40,19 +40,31 @@ pub fn build_reference_mappings(definitions: &mut [RimWorldDef]) {
     }
 
     for index in 0..definitions.len() {
-        if let Some(parent_name) = &definitions[index].parent_name.clone()
-            && let Some(parent_indices) = definitions_by_name.get(parent_name)
-        {
-            let child_name = definitions[index].def_name.clone();
-            for &parent_index in parent_indices {
-                if !definitions[parent_index]
+        let Some(parent_name) = definitions[index].parent_name.clone() else {
+            continue;
+        };
+        let child_name = definitions[index].def_name.clone();
+        if parent_name == child_name {
+            continue;
+        }
+        let Some(parent_indices) = definitions_by_name.get(&parent_name) else {
+            continue;
+        };
+
+        if !definitions[index].references_out.contains(&parent_name) {
+            definitions[index].references_out.push(parent_name);
+            definitions[index].references_out.sort();
+            reference_count += 1;
+        }
+
+        for &parent_index in parent_indices {
+            if !definitions[parent_index]
+                .references_in
+                .contains(&child_name)
+            {
+                definitions[parent_index]
                     .references_in
-                    .contains(&child_name)
-                {
-                    definitions[parent_index]
-                        .references_in
-                        .push(child_name.clone());
-                }
+                    .push(child_name.clone());
             }
         }
     }
@@ -153,5 +165,18 @@ mod tests {
         assert_eq!(definitions[0].references_out, ["Target"]);
         assert_eq!(definitions[0].code_references, ["Example.Component"]);
         assert_eq!(definitions[1].references_in, ["Source"]);
+    }
+
+    #[test]
+    fn represents_parent_relationships_in_both_directions() {
+        let parent = definition("Parent", Vec::new());
+        let mut child = definition("Child", Vec::new());
+        child.parent_name = Some("Parent".to_string());
+        let mut definitions = vec![parent, child];
+
+        build_reference_mappings(&mut definitions);
+
+        assert_eq!(definitions[1].references_out, ["Parent"]);
+        assert_eq!(definitions[0].references_in, ["Child"]);
     }
 }
