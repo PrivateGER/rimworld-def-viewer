@@ -1,3 +1,4 @@
+use quick_xml::escape::escape;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -19,7 +20,7 @@ impl DefElement {
 
         if !self.attributes.is_empty() {
             for (key, value) in &self.attributes {
-                xml.push_str(&format!(" {}=\"{}\"", key, value));
+                xml.push_str(&format!(" {}=\"{}\"", key, escape(value)));
             }
         }
 
@@ -32,10 +33,10 @@ impl DefElement {
 
         if let Some(content) = &self.content {
             if self.children.is_empty() {
-                xml.push_str(content);
+                xml.push_str(&escape(content));
             } else {
                 xml.push('\n');
-                xml.push_str(&format!("{}{}", "  ".repeat(indent + 1), content));
+                xml.push_str(&format!("{}{}", "  ".repeat(indent + 1), escape(content)));
                 xml.push('\n');
             }
         } else if !self.children.is_empty() {

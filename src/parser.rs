@@ -67,11 +67,10 @@ impl DefParser {
                     }
 
                     let mut attributes = HashMap::new();
-                    for attr in e.attributes().flatten() {
-                        let key = std::str::from_utf8(attr.key.as_ref())
-                            .unwrap_or("")
-                            .to_string();
-                        let value = std::str::from_utf8(&attr.value).unwrap_or("").to_string();
+                    for attr in e.attributes() {
+                        let attr = attr?;
+                        let key = std::str::from_utf8(attr.key.as_ref())?.to_string();
+                        let value = attr.decode_and_unescape_value(&reader)?.into_owned();
                         attributes.insert(key, value);
                     }
 
@@ -184,13 +183,12 @@ impl DefParser {
                     }
                 }
                 Ok(Event::Text(e)) => {
-                    let text = e.unescape().unwrap_or_default().trim().to_string();
-                    if !text.is_empty()
-                        && !element_stack.is_empty()
-                        && let Some(element) = element_stack.last_mut()
-                    {
-                        element.content = Some(text);
-                    }
+                    let text = e.unescape()?;
+                    Self::append_content(&mut element_stack, &text);
+                }
+                Ok(Event::CData(e)) => {
+                    let text = reader.decoder().decode(e.as_ref())?;
+                    Self::append_content(&mut element_stack, &text);
                 }
                 Ok(Event::Eof) => break,
                 Err(error) => return Err(anyhow::anyhow!("Error parsing XML: {}", error)),
@@ -200,6 +198,20 @@ impl DefParser {
         }
 
         Ok(())
+    }
+
+    fn append_content(element_stack: &mut [DefElement], text: &str) {
+        let text = text.trim();
+        if text.is_empty() {
+            return;
+        }
+
+        if let Some(element) = element_stack.last_mut() {
+            element
+                .content
+                .get_or_insert_with(String::new)
+                .push_str(text);
+        }
     }
 
     pub fn scan_defs_directory(&mut self) -> Result<()> {
@@ -335,15 +347,26 @@ mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    #[test]
-    fn parses_self_closing_elements_without_losing_attributes_or_siblings() -> Result<()> {
+    fn parse_single_definition(xml: &str) -> Result<RimWorldDef> {
         let unique = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let file_path = std::env::temp_dir().join(format!(
             "rimworld-def-viewer-{}-{unique}.xml",
             std::process::id()
         ));
-        fs::write(
-            &file_path,
+        fs::write(&file_path, xml)?;
+
+        let mut parser = DefParser::new(std::env::temp_dir().to_string_lossy().into_owned());
+        let parse_result = parser.parse_xml_file(&file_path);
+        let _ = fs::remove_file(&file_path);
+        parse_result?;
+
+        assert_eq!(parser.parsed_defs.len(), 1);
+        Ok(parser.parsed_defs.remove(0))
+    }
+
+    #[test]
+    fn parses_self_closing_elements_without_losing_attributes_or_siblings() -> Result<()> {
+        let parsed_def = parse_single_definition(
             r#"<Defs>
                 <GenStepDef>
                     <defName>WorkSite_ChopTrees</defName>
@@ -356,13 +379,6 @@ mod tests {
             </Defs>"#,
         )?;
 
-        let mut parser = DefParser::new(std::env::temp_dir().to_string_lossy().into_owned());
-        let parse_result = parser.parse_xml_file(&file_path);
-        let _ = fs::remove_file(&file_path);
-        parse_result?;
-
-        assert_eq!(parser.parsed_defs.len(), 1);
-        let parsed_def = &parser.parsed_defs[0];
         assert_eq!(parsed_def.def_name, "WorkSite_ChopTrees");
 
         let gen_step = parsed_def
@@ -403,6 +419,91 @@ mod tests {
                 .contains(r#"<genStep Class="GenStep_ChopTrees" />"#)
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn preserves_text_split_by_comments() -> Result<()> {
+        let parsed_def = parse_single_definition(
+            r#"<Defs>
+                <ThingDef>
+                    <defName>SplitText</defName>
+                    <label>left<!-- split -->right &amp; more</label>
+                </ThingDef>
+            </Defs>"#,
+        )?;
+
+        assert_eq!(parsed_def.label.as_deref(), Some("leftright & more"));
+        Ok(())
+    }
+
+    #[test]
+    fn preserves_cdata_as_element_content() -> Result<()> {
+        let parsed_def = parse_single_definition(
+            r#"<Defs>
+                <ThingDef>
+                    <defName>CdataText</defName>
+                    <description><![CDATA[Use <tag> & keep text]]></description>
+                </ThingDef>
+            </Defs>"#,
+        )?;
+
+        assert_eq!(
+            parsed_def.description.as_deref(),
+            Some("Use <tag> & keep text")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn reconstructed_xml_escapes_decoded_text_entities() -> Result<()> {
+        let parsed_def = parse_single_definition(
+            r#"<Defs>
+                <ThingDef>
+                    <defName>EntityText</defName>
+                    <label>A &amp; B &lt; C</label>
+                </ThingDef>
+            </Defs>"#,
+        )?;
+
+        assert_eq!(parsed_def.label.as_deref(), Some("A & B < C"));
+        assert!(
+            parsed_def
+                .raw_xml
+                .contains("<label>A &amp; B &lt; C</label>"),
+            "reconstructed XML was not escaped: {}",
+            parsed_def.raw_xml
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn decodes_attribute_entities_and_reescapes_them_once() -> Result<()> {
+        let parsed_def = parse_single_definition(
+            r#"<Defs>
+                <ThingDef>
+                    <defName>AttributeEntity</defName>
+                    <value note="A &amp; B &quot;quoted&quot;" />
+                </ThingDef>
+            </Defs>"#,
+        )?;
+
+        let value = parsed_def
+            .elements
+            .iter()
+            .find(|element| element.name == "value")
+            .unwrap();
+        assert_eq!(
+            value.attributes.get("note").map(String::as_str),
+            Some(r#"A & B "quoted""#)
+        );
+        assert!(
+            parsed_def
+                .raw_xml
+                .contains(r#"note="A &amp; B &quot;quoted&quot;""#),
+            "reconstructed XML escaped the attribute incorrectly: {}",
+            parsed_def.raw_xml
+        );
         Ok(())
     }
 }
