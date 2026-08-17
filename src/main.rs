@@ -3,6 +3,7 @@ use clap::{Arg, Command};
 use rimworld_def_viewer::dataset::DatasetGenerator;
 use rimworld_def_viewer::parser::DefParser;
 use rimworld_def_viewer::references::build_reference_mappings;
+use rimworld_def_viewer::site::generate_site;
 use std::path::Path;
 
 fn main() -> Result<()> {
@@ -19,12 +20,22 @@ fn main() -> Result<()> {
                 .help("Path to RimWorld base installation directory")
                 .required(true),
         )
+        .arg(
+            Arg::new("output-dir")
+                .short('o')
+                .long("output")
+                .value_name("DIRECTORY")
+                .help("Directory to write the complete static site")
+                .default_value("dist"),
+        )
         .get_matches();
 
     let rimworld_path = matches.get_one::<String>("rimworld-path").unwrap();
+    let output_dir = matches.get_one::<String>("output-dir").unwrap();
 
     println!("\nConfiguration:");
     println!("  RimWorld path: {}", rimworld_path);
+    println!("  Output directory: {}", output_dir);
 
     if !Path::new(rimworld_path).exists() {
         return Err(anyhow::anyhow!(
@@ -53,7 +64,7 @@ fn main() -> Result<()> {
     let generator = DatasetGenerator::new(definitions, rimworld_path.clone())?;
     println!("  ✓ Generator initialized");
 
-    generator.generate_dataset_file()?;
+    generate_site(&generator, Path::new(output_dir))?;
 
     println!("\n✓ Documentation generation complete!");
     Ok(())

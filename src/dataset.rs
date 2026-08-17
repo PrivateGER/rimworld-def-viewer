@@ -29,17 +29,17 @@ impl DatasetGenerator {
         }
     }
 
-    pub fn generate_dataset_file(&self) -> Result<()> {
+    pub(crate) fn generate_dataset_file(&self, output_dir: &Path) -> Result<()> {
         println!("\nGenerating compressed dataset file...");
 
         let compressed_data = self.create_compressed_data()?;
         println!("  ✓ Data compressed: {} bytes", compressed_data.len());
 
-        let dataset_path = "dataset.json.zstd";
-        fs::write(dataset_path, &compressed_data)?;
+        let dataset_path = output_dir.join("dataset.json.zstd");
+        fs::write(&dataset_path, &compressed_data)?;
         println!(
             "  ✓ Dataset file written: {} ({} bytes)",
-            dataset_path,
+            dataset_path.display(),
             compressed_data.len()
         );
 

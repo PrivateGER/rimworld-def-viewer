@@ -2,3 +2,4 @@
 .idea
 dataset.json.zstd
 dataset.json
+/dist/
