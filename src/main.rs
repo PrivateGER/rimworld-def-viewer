@@ -147,6 +147,9 @@ impl DefParser {
         let content = fs::read_to_string(file_path)?;
         let mut reader = Reader::from_str(&content);
         reader.trim_text(true);
+        // Treat self-closing tags as balanced start/end pairs so they pass
+        // through the same element-stack handling as explicitly closed tags.
+        reader.expand_empty_elements(true);
 
         let mut buf = Vec::new();
         let mut element_stack = Vec::new();
@@ -730,4 +733,81 @@ fn main() -> Result<()> {
     
     println!("\n✓ Documentation generation complete!");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn parses_self_closing_elements_without_losing_attributes_or_siblings() -> Result<()> {
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let file_path = std::env::temp_dir().join(format!(
+            "rimworld-def-viewer-{}-{unique}.xml",
+            std::process::id()
+        ));
+        fs::write(
+            &file_path,
+            r#"<Defs>
+                <GenStepDef>
+                    <defName>WorkSite_ChopTrees</defName>
+                    <genStep Class="GenStep_ChopTrees"/>
+                    <container>
+                        <marker value="present" />
+                    </container>
+                    <after>still parsed</after>
+                </GenStepDef>
+            </Defs>"#,
+        )?;
+
+        let mut parser = DefParser::new(std::env::temp_dir().to_string_lossy().into_owned());
+        let parse_result = parser.parse_xml_file(&file_path);
+        let _ = fs::remove_file(&file_path);
+        parse_result?;
+
+        assert_eq!(parser.parsed_defs.len(), 1);
+        let parsed_def = &parser.parsed_defs[0];
+        assert_eq!(parsed_def.def_name, "WorkSite_ChopTrees");
+
+        let gen_step = parsed_def
+            .elements
+            .iter()
+            .find(|element| element.name == "genStep")
+            .expect("self-closing genStep should be retained");
+        assert_eq!(
+            gen_step.attributes.get("Class").map(String::as_str),
+            Some("GenStep_ChopTrees")
+        );
+        assert!(gen_step.content.is_none());
+        assert!(gen_step.children.is_empty());
+
+        let marker = parsed_def
+            .elements
+            .iter()
+            .find(|element| element.name == "container")
+            .and_then(|element| element.children.first())
+            .expect("nested self-closing element should be retained");
+        assert_eq!(marker.name, "marker");
+        assert_eq!(
+            marker.attributes.get("value").map(String::as_str),
+            Some("present")
+        );
+
+        assert_eq!(
+            parsed_def
+                .elements
+                .iter()
+                .find(|element| element.name == "after")
+                .and_then(|element| element.content.as_deref()),
+            Some("still parsed")
+        );
+        assert!(
+            parsed_def
+                .raw_xml
+                .contains(r#"<genStep Class="GenStep_ChopTrees" />"#)
+        );
+
+        Ok(())
+    }
 }
