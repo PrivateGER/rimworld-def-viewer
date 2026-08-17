@@ -1,5 +1,5 @@
 use crate::model::{DefElement, DefinitionReference, DefinitionSummary, RimWorldDef};
-use crate::schema::{ManagedType, ReferenceSchema};
+use crate::schema::{CustomLoader, CustomLoaderRule, ManagedType, ReferenceSchema};
 use std::collections::{HashMap, HashSet};
 
 pub fn build_reference_mappings(definitions: &mut [RimWorldDef], schema: Option<&ReferenceSchema>) {
@@ -212,7 +212,7 @@ fn analyze_complex_elements(
     schema: &ReferenceSchema,
     references: &mut HashMap<String, Option<HashSet<String>>>,
 ) {
-    if schema.has_custom_loader(type_name) {
+    if schema.custom_loader(type_name) != CustomLoader::None {
         collect_heuristic_elements(elements, references);
         return;
     }
@@ -248,10 +248,19 @@ fn analyze_value(
                 if !element.children.is_empty() {
                     collect_heuristic_element(element, references);
                 }
-            } else if schema.has_custom_loader(&effective_type) {
-                collect_heuristic_element(element, references);
             } else {
-                analyze_complex_elements(&element.children, &effective_type, schema, references);
+                match schema.custom_loader(&effective_type) {
+                    CustomLoader::None => analyze_complex_elements(
+                        &element.children,
+                        &effective_type,
+                        schema,
+                        references,
+                    ),
+                    CustomLoader::Known(rule) => {
+                        analyze_custom_loader(element, rule, schema, references)
+                    }
+                    CustomLoader::Unknown => collect_heuristic_element(element, references),
+                }
             }
         }
         ManagedType::List(item_type) | ManagedType::Array(item_type) => {
@@ -273,6 +282,41 @@ fn analyze_value(
         }
         ManagedType::Primitive => {}
         ManagedType::Unknown => collect_heuristic_element(element, references),
+    }
+}
+
+fn analyze_custom_loader(
+    element: &DefElement,
+    rule: CustomLoaderRule,
+    schema: &ReferenceSchema,
+    references: &mut HashMap<String, Option<HashSet<String>>>,
+) {
+    match rule {
+        CustomLoaderRule::ElementName(expected_type) => {
+            add_typed_reference(references, &element.name, expected_type);
+        }
+        CustomLoaderRule::ElementTextTypeFromName => {
+            if let Some(expected_type) = schema.resolve_type(&element.name, None)
+                && schema.is_def_type(&expected_type)
+            {
+                add_typed_reference(references, &element_text(element), &expected_type);
+            }
+        }
+        CustomLoaderRule::ThingDefCount => {
+            if element.name == "li" {
+                add_typed_reference(references, &element_text(element), "Verse.ThingDef");
+            } else {
+                add_typed_reference(references, &element.name, "Verse.ThingDef");
+                for child in element
+                    .children
+                    .iter()
+                    .filter(|child| child.name == "thingDef" || child.name == "stuff")
+                {
+                    add_typed_reference(references, &element_text(child), "Verse.ThingDef");
+                }
+            }
+        }
+        CustomLoaderRule::NoReferences => {}
     }
 }
 
@@ -430,6 +474,34 @@ mod tests {
                                 "Verse.CompProperties".to_string(),
                             ))),
                         },
+                        ManagedField {
+                            name: "statBases".to_string(),
+                            aliases: Vec::new(),
+                            value_type: ManagedType::List(Box::new(ManagedType::Named(
+                                "RimWorld.StatModifier".to_string(),
+                            ))),
+                        },
+                        ManagedField {
+                            name: "shaderParameters".to_string(),
+                            aliases: Vec::new(),
+                            value_type: ManagedType::List(Box::new(ManagedType::Named(
+                                "Verse.ShaderParameter".to_string(),
+                            ))),
+                        },
+                        ManagedField {
+                            name: "hyperlinks".to_string(),
+                            aliases: Vec::new(),
+                            value_type: ManagedType::List(Box::new(ManagedType::Named(
+                                "Verse.DefHyperlink".to_string(),
+                            ))),
+                        },
+                        ManagedField {
+                            name: "products".to_string(),
+                            aliases: Vec::new(),
+                            value_type: ManagedType::List(Box::new(ManagedType::Named(
+                                "Verse.ThingDefCountClass".to_string(),
+                            ))),
+                        },
                     ],
                     has_custom_loader: false,
                 },
@@ -445,6 +517,41 @@ mod tests {
                 "Verse.AbilityDef".to_string(),
                 ManagedTypeInfo {
                     base_type: Some("Verse.Def".to_string()),
+                    ..ManagedTypeInfo::default()
+                },
+            ),
+            (
+                "RimWorld.StatDef".to_string(),
+                ManagedTypeInfo {
+                    base_type: Some("Verse.Def".to_string()),
+                    ..ManagedTypeInfo::default()
+                },
+            ),
+            (
+                "RimWorld.StatModifier".to_string(),
+                ManagedTypeInfo {
+                    has_custom_loader: true,
+                    ..ManagedTypeInfo::default()
+                },
+            ),
+            (
+                "Verse.ShaderParameter".to_string(),
+                ManagedTypeInfo {
+                    has_custom_loader: true,
+                    ..ManagedTypeInfo::default()
+                },
+            ),
+            (
+                "Verse.DefHyperlink".to_string(),
+                ManagedTypeInfo {
+                    has_custom_loader: true,
+                    ..ManagedTypeInfo::default()
+                },
+            ),
+            (
+                "Verse.ThingDefCountClass".to_string(),
+                ManagedTypeInfo {
+                    has_custom_loader: true,
                     ..ManagedTypeInfo::default()
                 },
             ),
@@ -615,5 +722,89 @@ mod tests {
             definitions[0].code_references,
             ["Example.SpecialCompProperties"]
         );
+    }
+
+    #[test]
+    fn applies_stable_custom_loader_rules_without_guessing_from_values() {
+        let source = definition(
+            "Source",
+            vec![
+                element(
+                    "statBases",
+                    None,
+                    vec![element("MarketValue", Some("100"), Vec::new())],
+                ),
+                element(
+                    "shaderParameters",
+                    None,
+                    vec![element("FakeStat", Some("100"), Vec::new())],
+                ),
+                element(
+                    "hyperlinks",
+                    None,
+                    vec![element("ThingDef", Some("LinkedThing"), Vec::new())],
+                ),
+                element(
+                    "products",
+                    None,
+                    vec![
+                        element(
+                            "Steel",
+                            None,
+                            vec![
+                                element("count", Some("5"), Vec::new()),
+                                element("stuff", Some("Gold"), Vec::new()),
+                            ],
+                        ),
+                        element("li", Some("WoodLog"), Vec::new()),
+                    ],
+                ),
+            ],
+        );
+        let mut stat = definition("MarketValue", Vec::new());
+        stat.def_type = "StatDef".to_string();
+        let number_collision = definition("100", Vec::new());
+        let mut shader_collision = definition("FakeStat", Vec::new());
+        shader_collision.def_type = "StatDef".to_string();
+        let linked_thing = definition("LinkedThing", Vec::new());
+        let steel = definition("Steel", Vec::new());
+        let gold = definition("Gold", Vec::new());
+        let wood = definition("WoodLog", Vec::new());
+        let mut incompatible_link = definition("LinkedThing", Vec::new());
+        incompatible_link.id = "Data/Core/Defs/LinkedStat.xml#0".to_string();
+        incompatible_link.def_type = "StatDef".to_string();
+        let mut definitions = vec![
+            source,
+            stat,
+            number_collision,
+            shader_collision,
+            linked_thing,
+            incompatible_link,
+            steel,
+            gold,
+            wood,
+        ];
+
+        let schema = typed_schema();
+        build_reference_mappings(&mut definitions, Some(&schema));
+
+        let references = &definitions[0].references_out;
+        let names: Vec<&str> = references
+            .iter()
+            .map(|reference| reference.name.as_str())
+            .collect();
+        assert_eq!(
+            names,
+            ["Gold", "LinkedThing", "MarketValue", "Steel", "WoodLog"]
+        );
+        let hyperlink = references
+            .iter()
+            .find(|reference| reference.name == "LinkedThing")
+            .unwrap();
+        assert_eq!(hyperlink.targets.len(), 1);
+        assert_eq!(hyperlink.targets[0].def_type, "ThingDef");
+        assert!(definitions[2].references_in.is_empty());
+        assert!(definitions[3].references_in.is_empty());
+        assert!(definitions[5].references_in.is_empty());
     }
 }

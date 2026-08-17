@@ -36,6 +36,21 @@ pub(crate) struct ManagedTypeInfo {
     pub has_custom_loader: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CustomLoader {
+    None,
+    Known(CustomLoaderRule),
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CustomLoaderRule {
+    ElementName(&'static str),
+    ElementTextTypeFromName,
+    ThingDefCount,
+    NoReferences,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ReferenceSchema {
     types: HashMap<String, ManagedTypeInfo>,
@@ -184,12 +199,28 @@ impl ReferenceSchema {
         false
     }
 
-    pub(crate) fn has_custom_loader(&self, type_name: &str) -> bool {
-        self.hierarchy(type_name).into_iter().any(|name| {
+    pub(crate) fn custom_loader(&self, type_name: &str) -> CustomLoader {
+        let Some(loader_type) = self.hierarchy(type_name).into_iter().find(|name| {
             self.types
-                .get(name)
+                .get(*name)
                 .is_some_and(|info| info.has_custom_loader)
-        })
+        }) else {
+            return CustomLoader::None;
+        };
+
+        let rule = match loader_type {
+            "RimWorld.StatModifier" => CustomLoaderRule::ElementName("RimWorld.StatDef"),
+            "RimWorld.SkillGain" => CustomLoaderRule::ElementName("RimWorld.SkillDef"),
+            "RimWorld.PawnGenOption" | "RimWorld.BiomeAnimalRecord" => {
+                CustomLoaderRule::ElementName("Verse.PawnKindDef")
+            }
+            "RimWorld.MutatorChance" => CustomLoaderRule::ElementName("RimWorld.TileMutatorDef"),
+            "Verse.DefHyperlink" => CustomLoaderRule::ElementTextTypeFromName,
+            "Verse.ThingDefCountClass" => CustomLoaderRule::ThingDefCount,
+            "Verse.ShaderParameter" => CustomLoaderRule::NoReferences,
+            _ => return CustomLoader::Unknown,
+        };
+        CustomLoader::Known(rule)
     }
 
     pub(crate) fn contains_type(&self, type_name: &str) -> bool {
@@ -396,5 +427,34 @@ mod tests {
         assert!(schema.is_def_type("Verse.SpecialThingDef"));
         assert!(schema.is_assignable("Verse.SpecialThingDef", "Verse.ThingDef"));
         assert!(!schema.is_assignable("Verse.ThingDef", "Verse.SpecialThingDef"));
+    }
+
+    #[test]
+    fn distinguishes_known_and_unknown_custom_loaders() {
+        let schema = ReferenceSchema::from_types(HashMap::from([
+            (
+                "RimWorld.StatModifier".to_string(),
+                ManagedTypeInfo {
+                    has_custom_loader: true,
+                    ..ManagedTypeInfo::default()
+                },
+            ),
+            (
+                "Example.ModLoader".to_string(),
+                ManagedTypeInfo {
+                    has_custom_loader: true,
+                    ..ManagedTypeInfo::default()
+                },
+            ),
+        ]));
+
+        assert_eq!(
+            schema.custom_loader("RimWorld.StatModifier"),
+            CustomLoader::Known(CustomLoaderRule::ElementName("RimWorld.StatDef"))
+        );
+        assert_eq!(
+            schema.custom_loader("Example.ModLoader"),
+            CustomLoader::Unknown
+        );
     }
 }
