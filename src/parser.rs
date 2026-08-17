@@ -120,6 +120,7 @@ impl DefParser {
                                 .and_then(|child| child.content.as_ref())
                                 .cloned();
                             let inheritance_name = element.attributes.get("Name").cloned();
+                            let class_name = element.attributes.get("Class").cloned();
 
                             let label = element
                                 .children
@@ -163,6 +164,7 @@ impl DefParser {
                                 id,
                                 def_name,
                                 inheritance_name,
+                                class_name,
                                 def_type: element.name.clone(),
                                 label,
                                 description,
@@ -613,7 +615,7 @@ mod tests {
     fn distinguishes_definition_names_from_inheritance_names() -> Result<()> {
         let parsed_def = parse_single_definition(
             r#"<Defs>
-                <ThingDef Name="ShipChunkBase">
+                <ThingDef Name="ShipChunkBase" Class="Verse.SpecialThingDef">
                     <defName>ShipChunk</defName>
                 </ThingDef>
             </Defs>"#,
@@ -623,6 +625,10 @@ mod tests {
         assert_eq!(
             parsed_def.inheritance_name.as_deref(),
             Some("ShipChunkBase")
+        );
+        assert_eq!(
+            parsed_def.class_name.as_deref(),
+            Some("Verse.SpecialThingDef")
         );
         Ok(())
     }

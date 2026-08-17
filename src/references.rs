@@ -1,7 +1,8 @@
 use crate::model::{DefElement, DefinitionReference, DefinitionSummary, RimWorldDef};
-use std::collections::HashMap;
+use crate::schema::{ManagedType, ReferenceSchema};
+use std::collections::{HashMap, HashSet};
 
-pub fn build_reference_mappings(definitions: &mut [RimWorldDef]) {
+pub fn build_reference_mappings(definitions: &mut [RimWorldDef], schema: Option<&ReferenceSchema>) {
     println!("\nBuilding reference mappings...");
 
     let mut definitions_by_name: HashMap<String, Vec<usize>> = HashMap::new();
@@ -21,45 +22,40 @@ pub fn build_reference_mappings(definitions: &mut [RimWorldDef]) {
         }
     }
 
-    let mut outgoing = vec![Vec::new(); definitions.len()];
-    let mut incoming = vec![Vec::new(); definitions.len()];
     let mut code_references = vec![Vec::new(); definitions.len()];
     let mut reference_count = 0;
+    let mut graph = ReferenceGraph::new(definitions, schema);
 
     for source_index in 0..definitions.len() {
-        let (reference_names, source_code_references) =
-            extract_references(&definitions[source_index].elements);
-        code_references[source_index] = source_code_references;
+        let analysis = analyze_definition(&definitions[source_index], schema);
+        code_references[source_index] = analysis.code_references;
 
-        for reference_name in reference_names {
-            if add_reference(
+        for (reference_name, expected_types) in analysis.references {
+            if graph.add_reference(
                 source_index,
                 &reference_name,
-                definitions,
+                expected_types.as_ref(),
                 &definitions_by_name,
-                &mut outgoing,
-                &mut incoming,
             ) {
                 reference_count += 1;
             }
         }
     }
 
-    for source_index in 0..definitions.len() {
-        if let Some(parent_name) = definitions[source_index].parent_name.clone()
-            && add_reference(
+    for (source_index, definition) in definitions.iter().enumerate() {
+        if let Some(parent_name) = definition.parent_name.clone()
+            && graph.add_reference(
                 source_index,
                 &parent_name,
-                definitions,
+                None,
                 &definitions_by_inheritance_name,
-                &mut outgoing,
-                &mut incoming,
             )
         {
             reference_count += 1;
         }
     }
 
+    let (mut outgoing, mut incoming) = (graph.outgoing, graph.incoming);
     for index in 0..definitions.len() {
         outgoing[index].sort_by(|left, right| left.name.cmp(&right.name));
         incoming[index].sort_by(|left, right| left.id.cmp(&right.id));
@@ -74,58 +70,87 @@ pub fn build_reference_mappings(definitions: &mut [RimWorldDef]) {
     );
 }
 
-fn add_reference(
-    source_index: usize,
-    reference_name: &str,
-    definitions: &[RimWorldDef],
-    definitions_by_name: &HashMap<String, Vec<usize>>,
-    outgoing: &mut [Vec<DefinitionReference>],
-    incoming: &mut [Vec<DefinitionSummary>],
-) -> bool {
-    if outgoing[source_index]
-        .iter()
-        .any(|reference| reference.name == reference_name)
-    {
-        return false;
-    }
+struct ReferenceGraph<'a> {
+    definitions: &'a [RimWorldDef],
+    schema: Option<&'a ReferenceSchema>,
+    outgoing: Vec<Vec<DefinitionReference>>,
+    incoming: Vec<Vec<DefinitionSummary>>,
+}
 
-    let Some(matching_indices) = definitions_by_name.get(reference_name) else {
-        return false;
-    };
-    let target_indices: Vec<usize> = matching_indices
-        .iter()
-        .copied()
-        .filter(|target_index| *target_index != source_index)
-        .collect();
-    if target_indices.is_empty() {
-        return false;
-    }
-
-    let mut targets: Vec<DefinitionSummary> = target_indices
-        .iter()
-        .map(|target_index| definition_summary(&definitions[*target_index]))
-        .collect();
-    targets.sort_by(|left, right| {
-        left.def_type
-            .cmp(&right.def_type)
-            .then_with(|| left.id.cmp(&right.id))
-    });
-
-    if let [target_index] = target_indices.as_slice() {
-        let source = definition_summary(&definitions[source_index]);
-        if !incoming[*target_index]
-            .iter()
-            .any(|candidate| candidate.id == source.id)
-        {
-            incoming[*target_index].push(source);
+impl<'a> ReferenceGraph<'a> {
+    fn new(definitions: &'a [RimWorldDef], schema: Option<&'a ReferenceSchema>) -> Self {
+        Self {
+            definitions,
+            schema,
+            outgoing: vec![Vec::new(); definitions.len()],
+            incoming: vec![Vec::new(); definitions.len()],
         }
     }
 
-    outgoing[source_index].push(DefinitionReference {
-        name: reference_name.to_string(),
-        targets,
-    });
-    true
+    fn add_reference(
+        &mut self,
+        source_index: usize,
+        reference_name: &str,
+        expected_types: Option<&HashSet<String>>,
+        definitions_by_name: &HashMap<String, Vec<usize>>,
+    ) -> bool {
+        if self.outgoing[source_index]
+            .iter()
+            .any(|reference| reference.name == reference_name)
+        {
+            return false;
+        }
+
+        let Some(matching_indices) = definitions_by_name.get(reference_name) else {
+            return false;
+        };
+        let target_indices: Vec<usize> = matching_indices
+            .iter()
+            .copied()
+            .filter(|target_index| *target_index != source_index)
+            .filter(|target_index| {
+                let (Some(expected_types), Some(schema)) = (expected_types, self.schema) else {
+                    return true;
+                };
+                definition_runtime_type(&self.definitions[*target_index], schema).is_some_and(
+                    |target_type| {
+                        expected_types
+                            .iter()
+                            .any(|expected_type| schema.is_assignable(&target_type, expected_type))
+                    },
+                )
+            })
+            .collect();
+        if target_indices.is_empty() {
+            return false;
+        }
+
+        let mut targets: Vec<DefinitionSummary> = target_indices
+            .iter()
+            .map(|target_index| definition_summary(&self.definitions[*target_index]))
+            .collect();
+        targets.sort_by(|left, right| {
+            left.def_type
+                .cmp(&right.def_type)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+
+        if let [target_index] = target_indices.as_slice() {
+            let source = definition_summary(&self.definitions[source_index]);
+            if !self.incoming[*target_index]
+                .iter()
+                .any(|candidate| candidate.id == source.id)
+            {
+                self.incoming[*target_index].push(source);
+            }
+        }
+
+        self.outgoing[source_index].push(DefinitionReference {
+            name: reference_name.to_string(),
+            targets,
+        });
+        true
+    }
 }
 
 fn definition_summary(definition: &RimWorldDef) -> DefinitionSummary {
@@ -138,58 +163,203 @@ fn definition_summary(definition: &RimWorldDef) -> DefinitionSummary {
     }
 }
 
-fn extract_references(elements: &[DefElement]) -> (Vec<String>, Vec<String>) {
-    let mut references = Vec::new();
-    let mut code_references = Vec::new();
-
-    extract_references_recursive(elements, &mut references, &mut code_references);
-
-    references.sort();
-    references.dedup();
-    code_references.sort();
-    code_references.dedup();
-
-    (references, code_references)
+#[derive(Debug, Default)]
+struct ReferenceAnalysis {
+    references: HashMap<String, Option<HashSet<String>>>,
+    code_references: Vec<String>,
 }
 
-fn extract_references_recursive(
+fn analyze_definition(
+    definition: &RimWorldDef,
+    schema: Option<&ReferenceSchema>,
+) -> ReferenceAnalysis {
+    let mut analysis = ReferenceAnalysis::default();
+    if let Some(class_name) = &definition.class_name {
+        analysis.code_references.push(class_name.clone());
+    }
+    collect_code_references(&definition.elements, &mut analysis.code_references);
+
+    if let Some(schema) = schema
+        && let Some(root_type) = definition_runtime_type(definition, schema)
+    {
+        analyze_complex_elements(
+            &definition.elements,
+            &root_type,
+            schema,
+            &mut analysis.references,
+        );
+    } else {
+        collect_heuristic_elements(&definition.elements, &mut analysis.references);
+    }
+
+    analysis.code_references.sort();
+    analysis.code_references.dedup();
+    analysis
+}
+
+fn definition_runtime_type(definition: &RimWorldDef, schema: &ReferenceSchema) -> Option<String> {
+    let declared_type = schema.resolve_type(&definition.def_type, None);
+    definition
+        .class_name
+        .as_deref()
+        .and_then(|class_name| schema.resolve_type(class_name, declared_type.as_deref()))
+        .or(declared_type)
+}
+
+fn analyze_complex_elements(
     elements: &[DefElement],
-    references: &mut Vec<String>,
-    code_references: &mut Vec<String>,
+    type_name: &str,
+    schema: &ReferenceSchema,
+    references: &mut HashMap<String, Option<HashSet<String>>>,
 ) {
+    if schema.has_custom_loader(type_name) {
+        collect_heuristic_elements(elements, references);
+        return;
+    }
+
     for element in elements {
-        if element.name != "defName" && element.name != "li" {
-            references.push(element.name.clone());
-        }
+        let Some(field) = schema.find_field(type_name, &element.name) else {
+            collect_heuristic_element(element, references);
+            continue;
+        };
+        analyze_value(element, &field.value_type, schema, references);
+    }
+}
 
-        if let Some(content) = &element.content
-            && element.name != "defName"
-        {
-            references.push(content.clone());
-        }
+fn analyze_value(
+    element: &DefElement,
+    value_type: &ManagedType,
+    schema: &ReferenceSchema,
+    references: &mut HashMap<String, Option<HashSet<String>>>,
+) {
+    match value_type {
+        ManagedType::Named(declared_type) => {
+            if schema.is_def_type(declared_type) {
+                add_typed_reference(references, &element_text(element), declared_type);
+                return;
+            }
 
-        for (key, value) in &element.attributes {
-            if key == "Class" {
-                code_references.push(value.clone());
+            let effective_type = element
+                .attributes
+                .get("Class")
+                .and_then(|class_name| schema.resolve_type(class_name, Some(declared_type)))
+                .unwrap_or_else(|| declared_type.clone());
+            if !schema.contains_type(&effective_type) {
+                if !element.children.is_empty() {
+                    collect_heuristic_element(element, references);
+                }
+            } else if schema.has_custom_loader(&effective_type) {
+                collect_heuristic_element(element, references);
             } else {
-                references.push(value.clone());
+                analyze_complex_elements(&element.children, &effective_type, schema, references);
             }
         }
-
-        extract_references_recursive(&element.children, references, code_references);
+        ManagedType::List(item_type) | ManagedType::Array(item_type) => {
+            for item in &element.children {
+                analyze_value(item, item_type, schema, references);
+            }
+        }
+        ManagedType::Dictionary(key_type, value_type) => {
+            for item in &element.children {
+                let key = item.children.iter().find(|child| child.name == "key");
+                let value = item.children.iter().find(|child| child.name == "value");
+                if let (Some(key), Some(value)) = (key, value) {
+                    analyze_value(key, key_type, schema, references);
+                    analyze_value(value, value_type, schema, references);
+                } else {
+                    collect_heuristic_element(item, references);
+                }
+            }
+        }
+        ManagedType::Primitive => {}
+        ManagedType::Unknown => collect_heuristic_element(element, references),
     }
+}
+
+fn add_typed_reference(
+    references: &mut HashMap<String, Option<HashSet<String>>>,
+    name: &str,
+    expected_type: &str,
+) {
+    if name.is_empty() {
+        return;
+    }
+    if let Some(types) = references
+        .entry(name.to_string())
+        .or_insert_with(|| Some(HashSet::new()))
+        .as_mut()
+    {
+        types.insert(expected_type.to_string());
+    }
+}
+
+fn add_heuristic_reference(references: &mut HashMap<String, Option<HashSet<String>>>, name: &str) {
+    if !name.is_empty() {
+        references.insert(name.to_string(), None);
+    }
+}
+
+fn collect_heuristic_elements(
+    elements: &[DefElement],
+    references: &mut HashMap<String, Option<HashSet<String>>>,
+) {
+    for element in elements {
+        collect_heuristic_element(element, references);
+    }
+}
+
+fn collect_heuristic_element(
+    element: &DefElement,
+    references: &mut HashMap<String, Option<HashSet<String>>>,
+) {
+    if element.name != "defName" && element.name != "li" {
+        add_heuristic_reference(references, &element.name);
+    }
+
+    if let Some(content) = &element.content
+        && element.name != "defName"
+    {
+        add_heuristic_reference(references, content);
+    }
+
+    for (key, value) in &element.attributes {
+        if key != "Class" {
+            add_heuristic_reference(references, value);
+        }
+    }
+
+    collect_heuristic_elements(&element.children, references);
+}
+
+fn collect_code_references(elements: &[DefElement], code_references: &mut Vec<String>) {
+    for element in elements {
+        if let Some(class_name) = element.attributes.get("Class") {
+            code_references.push(class_name.clone());
+        }
+        collect_code_references(&element.children, code_references);
+    }
+}
+
+fn element_text(element: &DefElement) -> String {
+    let mut text = element.content.clone().unwrap_or_default();
+    for child in &element.children {
+        text.push_str(&element_text(child));
+    }
+    text.trim().to_string()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::DefStats;
+    use crate::schema::{ManagedField, ManagedTypeInfo};
 
     fn definition(name: &str, elements: Vec<DefElement>) -> RimWorldDef {
         RimWorldDef {
             id: format!("Data/Core/Defs/{name}.xml#0"),
             def_name: Some(name.to_string()),
             inheritance_name: None,
+            class_name: None,
             def_type: "ThingDef".to_string(),
             label: None,
             description: None,
@@ -222,6 +392,81 @@ mod tests {
         }
     }
 
+    fn element(name: &str, content: Option<&str>, children: Vec<DefElement>) -> DefElement {
+        DefElement {
+            name: name.to_string(),
+            attributes: HashMap::new(),
+            content: content.map(str::to_string),
+            comments: Vec::new(),
+            children,
+            depth: 0,
+        }
+    }
+
+    fn typed_schema() -> ReferenceSchema {
+        ReferenceSchema::from_types(HashMap::from([
+            ("Verse.Def".to_string(), ManagedTypeInfo::default()),
+            (
+                "Verse.ThingDef".to_string(),
+                ManagedTypeInfo {
+                    base_type: Some("Verse.Def".to_string()),
+                    fields: vec![
+                        ManagedField {
+                            name: "tickerType".to_string(),
+                            aliases: Vec::new(),
+                            value_type: ManagedType::Primitive,
+                        },
+                        ManagedField {
+                            name: "thingCategories".to_string(),
+                            aliases: Vec::new(),
+                            value_type: ManagedType::List(Box::new(ManagedType::Named(
+                                "Verse.ThingCategoryDef".to_string(),
+                            ))),
+                        },
+                        ManagedField {
+                            name: "comps".to_string(),
+                            aliases: Vec::new(),
+                            value_type: ManagedType::List(Box::new(ManagedType::Named(
+                                "Verse.CompProperties".to_string(),
+                            ))),
+                        },
+                    ],
+                    has_custom_loader: false,
+                },
+            ),
+            (
+                "Verse.ThingCategoryDef".to_string(),
+                ManagedTypeInfo {
+                    base_type: Some("Verse.Def".to_string()),
+                    ..ManagedTypeInfo::default()
+                },
+            ),
+            (
+                "Verse.AbilityDef".to_string(),
+                ManagedTypeInfo {
+                    base_type: Some("Verse.Def".to_string()),
+                    ..ManagedTypeInfo::default()
+                },
+            ),
+            (
+                "Verse.CompProperties".to_string(),
+                ManagedTypeInfo::default(),
+            ),
+            (
+                "Example.SpecialCompProperties".to_string(),
+                ManagedTypeInfo {
+                    base_type: Some("Verse.CompProperties".to_string()),
+                    fields: vec![ManagedField {
+                        name: "targetDef".to_string(),
+                        aliases: Vec::new(),
+                        value_type: ManagedType::Named("Verse.ThingDef".to_string()),
+                    }],
+                    has_custom_loader: false,
+                },
+            ),
+        ]))
+    }
+
     #[test]
     fn builds_outgoing_incoming_and_code_references() {
         let mut definitions = vec![
@@ -229,7 +474,7 @@ mod tests {
             definition("Target", Vec::new()),
         ];
 
-        build_reference_mappings(&mut definitions);
+        build_reference_mappings(&mut definitions, None);
 
         assert_eq!(definitions[0].references_out.len(), 1);
         assert_eq!(definitions[0].references_out[0].name, "Target");
@@ -251,7 +496,7 @@ mod tests {
         child.parent_name = Some("Parent".to_string());
         let mut definitions = vec![parent, child];
 
-        build_reference_mappings(&mut definitions);
+        build_reference_mappings(&mut definitions, None);
 
         assert_eq!(definitions[1].references_out.len(), 1);
         assert_eq!(definitions[1].references_out[0].name, "Parent");
@@ -272,7 +517,7 @@ mod tests {
         second.def_type = "PawnKindDef".to_string();
         let mut definitions = vec![source, first, second];
 
-        build_reference_mappings(&mut definitions);
+        build_reference_mappings(&mut definitions, None);
 
         let reference = &definitions[0].references_out[0];
         assert_eq!(reference.name, "Shared");
@@ -294,10 +539,81 @@ mod tests {
         target.inheritance_name = Some("TemplateName".to_string());
         let mut definitions = vec![source, target];
 
-        build_reference_mappings(&mut definitions);
+        build_reference_mappings(&mut definitions, None);
 
         assert_eq!(definitions[0].references_out.len(), 1);
         assert_eq!(definitions[0].references_out[0].name, "ConcreteName");
         assert_eq!(definitions[1].references_in.len(), 1);
+    }
+
+    #[test]
+    fn typed_fields_reject_scalar_matches_and_incompatible_candidates() {
+        let source_elements = vec![
+            element("tickerType", Some("Normal"), Vec::new()),
+            element(
+                "thingCategories",
+                None,
+                vec![element("li", Some("Shared"), Vec::new())],
+            ),
+        ];
+        let source = definition("Source", source_elements);
+        let mut scalar_collision = definition("Normal", Vec::new());
+        scalar_collision.def_type = "AbilityDef".to_string();
+        let mut compatible = definition("Shared", Vec::new());
+        compatible.def_type = "ThingCategoryDef".to_string();
+        let mut incompatible = definition("Shared", Vec::new());
+        incompatible.id = "Data/Core/Defs/SharedThing.xml#0".to_string();
+        let mut definitions = vec![source, scalar_collision, compatible, incompatible];
+
+        let schema = typed_schema();
+        build_reference_mappings(&mut definitions, Some(&schema));
+
+        assert_eq!(definitions[0].references_out.len(), 1);
+        assert_eq!(definitions[0].references_out[0].name, "Shared");
+        assert_eq!(definitions[0].references_out[0].targets.len(), 1);
+        assert_eq!(
+            definitions[0].references_out[0].targets[0].def_type,
+            "ThingCategoryDef"
+        );
+        assert!(definitions[1].references_in.is_empty());
+        assert_eq!(definitions[2].references_in.len(), 1);
+        assert!(definitions[3].references_in.is_empty());
+    }
+
+    #[test]
+    fn typed_traversal_honors_class_overrides_and_unknown_field_fallback() {
+        let mut specialized_comp = element(
+            "li",
+            None,
+            vec![element("targetDef", Some("TypedTarget"), Vec::new())],
+        );
+        specialized_comp.attributes.insert(
+            "Class".to_string(),
+            "Example.SpecialCompProperties".to_string(),
+        );
+        let source = definition(
+            "Source",
+            vec![
+                element("comps", None, vec![specialized_comp]),
+                element("unknownModField", Some("FallbackTarget"), Vec::new()),
+            ],
+        );
+        let typed_target = definition("TypedTarget", Vec::new());
+        let fallback_target = definition("FallbackTarget", Vec::new());
+        let mut definitions = vec![source, typed_target, fallback_target];
+
+        let schema = typed_schema();
+        build_reference_mappings(&mut definitions, Some(&schema));
+
+        let names: Vec<&str> = definitions[0]
+            .references_out
+            .iter()
+            .map(|reference| reference.name.as_str())
+            .collect();
+        assert_eq!(names, ["FallbackTarget", "TypedTarget"]);
+        assert_eq!(
+            definitions[0].code_references,
+            ["Example.SpecialCompProperties"]
+        );
     }
 }

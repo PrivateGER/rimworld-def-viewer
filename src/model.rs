@@ -70,6 +70,7 @@ pub struct RimWorldDef {
     pub id: String,
     pub def_name: Option<String>,
     pub inheritance_name: Option<String>,
+    pub class_name: Option<String>,
     pub def_type: String,
     pub label: Option<String>,
     pub description: Option<String>,

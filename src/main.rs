@@ -3,6 +3,7 @@ use clap::{Arg, Command};
 use rimworld_def_viewer::dataset::DatasetGenerator;
 use rimworld_def_viewer::parser::DefParser;
 use rimworld_def_viewer::references::build_reference_mappings;
+use rimworld_def_viewer::schema::ReferenceSchema;
 use rimworld_def_viewer::site::generate_site;
 use std::path::Path;
 
@@ -58,7 +59,18 @@ fn main() -> Result<()> {
     parser.scan_defs_directory()?;
 
     let mut definitions = parser.into_defs();
-    build_reference_mappings(&mut definitions);
+    let reference_schema = match ReferenceSchema::from_rimworld_path(Path::new(rimworld_path)) {
+        Ok(schema) => {
+            println!("  ✓ Loaded managed type metadata");
+            Some(schema)
+        }
+        Err(error) => {
+            eprintln!("  ⚠ Managed type metadata unavailable: {error:#}");
+            eprintln!("    Falling back to heuristic reference detection");
+            None
+        }
+    };
+    build_reference_mappings(&mut definitions, reference_schema.as_ref());
 
     println!("\nCreating HTML generator...");
     let generator = DatasetGenerator::new(definitions, rimworld_path.clone())?;
