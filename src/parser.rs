@@ -138,8 +138,7 @@ impl DefParser {
                             let is_abstract = element
                                 .attributes
                                 .get("Abstract")
-                                .map(|value| value == "True")
-                                .unwrap_or(false);
+                                .is_some_and(|value| value.eq_ignore_ascii_case("true"));
 
                             let tags =
                                 self.generate_tags(&element, is_abstract, parent_name.is_some());
@@ -630,6 +629,21 @@ mod tests {
             parsed_def.class_name.as_deref(),
             Some("Verse.SpecialThingDef")
         );
+        Ok(())
+    }
+
+    #[test]
+    fn parses_boolean_definition_attributes_case_insensitively() -> Result<()> {
+        let parsed_def = parse_single_definition(
+            r#"<Defs>
+                <ThingDef Abstract="true">
+                    <defName>LowercaseAbstract</defName>
+                </ThingDef>
+            </Defs>"#,
+        )?;
+
+        assert!(parsed_def.is_abstract);
+        assert!(parsed_def.tags.iter().any(|tag| tag == "Abstract"));
         Ok(())
     }
 }
