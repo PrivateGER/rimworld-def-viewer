@@ -46,12 +46,18 @@ impl DefParser {
 
     fn parse_xml_file(&self, file_path: &Path) -> Result<Vec<RimWorldDef>> {
         let content = fs::read_to_string(file_path)?;
+        let source_offset = if content.starts_with('\u{feff}') {
+            '\u{feff}'.len_utf8()
+        } else {
+            0
+        };
         let mut reader = Reader::from_str(&content);
         reader.trim_text(true);
         reader.expand_empty_elements(true);
 
         let mut buf = Vec::new();
         let mut element_stack = Vec::new();
+        let mut definition_start = None;
         let mut in_defs = false;
         let mut parsed_defs = Vec::new();
 
@@ -87,6 +93,12 @@ impl DefParser {
 
                         element_stack.push(element);
                     } else if in_defs {
+                        let event_end = reader.buffer_position() + source_offset;
+                        definition_start = Some(
+                            content[..event_end]
+                                .rfind('<')
+                                .ok_or_else(|| anyhow::anyhow!("Missing definition start tag"))?,
+                        );
                         let element = DefElement {
                             name: name.clone(),
                             attributes,
@@ -143,7 +155,17 @@ impl DefParser {
                             let tags =
                                 self.generate_tags(&element, is_abstract, parent_name.is_some());
                             let stats = self.calculate_stats(&element.children);
-                            let raw_xml = element.to_xml(0);
+                            let raw_xml = content
+                                .get(
+                                    definition_start.take().ok_or_else(|| {
+                                        anyhow::anyhow!("Missing definition start position")
+                                    })?
+                                        ..reader.buffer_position() + source_offset,
+                                )
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!("Definition positions are not UTF-8 boundaries")
+                                })?
+                                .to_string();
                             let extension = self.detect_extension(file_path);
 
                             let relative_path = if let Ok(stripped) =
@@ -444,7 +466,7 @@ mod tests {
         assert!(
             parsed_def
                 .raw_xml
-                .contains(r#"<genStep Class="GenStep_ChopTrees" />"#)
+                .contains(r#"<genStep Class="GenStep_ChopTrees"/>"#)
         );
 
         Ok(())
@@ -497,6 +519,53 @@ mod tests {
     }
 
     #[test]
+    fn preserves_the_source_order_of_nested_comments_in_raw_xml() -> Result<()> {
+        let parsed_def = parse_single_definition(
+            r#"<Defs>
+                <WorldGenStepDef>
+                    <defName>Landmarks</defName>
+                    <order>650</order><!-- After pollution, roads, rivers etc. -->
+                    <worldGenStep Class="WorldGenStep_Landmarks"/>
+                </WorldGenStepDef>
+            </Defs>"#,
+        )?;
+
+        let order_end = parsed_def
+            .raw_xml
+            .find("</order>")
+            .expect("order should be retained");
+        let comment = parsed_def
+            .raw_xml
+            .find("<!-- After pollution, roads, rivers etc. -->")
+            .expect("comment should be retained");
+        let world_gen_step = parsed_def
+            .raw_xml
+            .find("<worldGenStep")
+            .expect("following element should be retained");
+
+        assert!(order_end < comment && comment < world_gen_step);
+        Ok(())
+    }
+
+    #[test]
+    fn preserves_raw_xml_boundaries_in_utf8_bom_files() -> Result<()> {
+        let definitions = parse_definitions(
+            "\u{feff}<Defs>\r\n  <ThingDef><defName>First</defName></ThingDef>\r\n  \
+             <ThingDef><defName>Second</defName></ThingDef>\r\n</Defs>",
+        )?;
+
+        assert_eq!(
+            definitions[0].raw_xml,
+            "<ThingDef><defName>First</defName></ThingDef>"
+        );
+        assert_eq!(
+            definitions[1].raw_xml,
+            "<ThingDef><defName>Second</defName></ThingDef>"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn preserves_cdata_as_element_content() -> Result<()> {
         let parsed_def = parse_single_definition(
             r#"<Defs>
@@ -515,7 +584,7 @@ mod tests {
     }
 
     #[test]
-    fn reconstructed_xml_escapes_decoded_text_entities() -> Result<()> {
+    fn raw_xml_preserves_text_entities() -> Result<()> {
         let parsed_def = parse_single_definition(
             r#"<Defs>
                 <ThingDef>
@@ -530,14 +599,14 @@ mod tests {
             parsed_def
                 .raw_xml
                 .contains("<label>A &amp; B &lt; C</label>"),
-            "reconstructed XML was not escaped: {}",
+            "raw XML altered the source entity: {}",
             parsed_def.raw_xml
         );
         Ok(())
     }
 
     #[test]
-    fn decodes_attribute_entities_and_reescapes_them_once() -> Result<()> {
+    fn decodes_attribute_entities_without_altering_raw_xml() -> Result<()> {
         let parsed_def = parse_single_definition(
             r#"<Defs>
                 <ThingDef>
@@ -560,7 +629,7 @@ mod tests {
             parsed_def
                 .raw_xml
                 .contains(r#"note="A &amp; B &quot;quoted&quot;""#),
-            "reconstructed XML escaped the attribute incorrectly: {}",
+            "raw XML altered the source attribute: {}",
             parsed_def.raw_xml
         );
         Ok(())
