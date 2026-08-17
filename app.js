@@ -1,10 +1,8 @@
-// Fetch and decompress data from dataset file
-async function loadDataFromFile() {
+async function loadCompressedJson(fileName, description) {
     try {
-        // Fetch the compressed data from static filename
-        const response = await fetch('dataset.json.zstd');
+        const response = await fetch(fileName);
         if (!response.ok) {
-            throw new Error(`Failed to fetch dataset: ${response.status} ${response.statusText}`);
+            throw new Error(`Failed to fetch ${description}: ${response.status} ${response.statusText}`);
         }
 
         const compressed = new Uint8Array(await response.arrayBuffer());
@@ -16,9 +14,17 @@ async function loadDataFromFile() {
         const jsonString = new TextDecoder().decode(decompressed);
         return JSON.parse(jsonString);
     } catch (error) {
-        console.error('Failed to load dataset:', error);
-        throw new Error('Failed to load definition data: ' + error.message);
+        console.error(`Failed to load ${description}:`, error);
+        throw new Error(`Failed to load ${description}: ${error.message}`);
     }
+}
+
+function loadDataFromFile() {
+    return loadCompressedJson('dataset.json.zstd', 'definition data');
+}
+
+function loadRawXmlFromFile() {
+    return loadCompressedJson('raw-xml.json.zstd', 'raw XML');
 }
 
 function extensionFromFilePath(filePath) {
@@ -35,6 +41,7 @@ createApp({
             categories: [],
             stats: { total_defs: 0, total_categories: 0, total_files: 0 },
             defsById: {},
+            rawXmlById: null,
 
             // Filters and Search
             searchQuery: '',
@@ -49,7 +56,9 @@ createApp({
 
             // Loading State
             loading: true,
-            error: null
+            error: null,
+            rawXmlLoadingId: null,
+            rawXmlLoadError: null
         }
     },
     computed: {
@@ -194,8 +203,25 @@ createApp({
         toggleDef(definitionId) {
             this.expandedDefs = this._toggleSet(this.expandedDefs, definitionId);
         },
-        toggleXML(definitionId) {
-            this.showXML = this._toggleSet(this.showXML, definitionId);
+        async toggleXML(definitionId) {
+            if (this.showXML.has(definitionId)) {
+                this.showXML = this._toggleSet(this.showXML, definitionId);
+                return;
+            }
+
+            this.rawXmlLoadingId = definitionId;
+            this.rawXmlLoadError = null;
+            try {
+                this.rawXmlById ||= await loadRawXmlFromFile();
+                if (!Object.hasOwn(this.rawXmlById, definitionId)) {
+                    throw new Error(`Raw XML not found for ${definitionId}`);
+                }
+                this.showXML = this._toggleSet(this.showXML, definitionId);
+            } catch (error) {
+                this.rawXmlLoadError = { definitionId, message: error.message };
+            } finally {
+                this.rawXmlLoadingId = null;
+            }
         },
         _toggleSet(set, item) {
             const newSet = new Set(set);
@@ -319,6 +345,9 @@ createApp({
             }
 
             return result;
+        },
+        rawXmlFor(definitionId) {
+            return this.rawXmlById?.[definitionId] || '';
         },
         async copyXML(xml) {
             try {

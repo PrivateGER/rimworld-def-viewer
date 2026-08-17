@@ -16,7 +16,7 @@ pub fn generate_site(generator: &DatasetGenerator, output_dir: &Path) -> Result<
         fs::write(output_dir.join(file_name), contents)?;
     }
 
-    generator.generate_dataset_file(output_dir)
+    generator.generate_dataset_files(output_dir)
 }
 
 #[cfg(test)]
@@ -56,6 +56,8 @@ mod tests {
         assert!(app.contains("def.def_type = category.name"));
         assert!(app.contains("def.extension = extensionFromFilePath(def.file_path)"));
         assert!(app.contains("target.references_in.push(def.id)"));
+        assert!(app.contains("loadCompressedJson('raw-xml.json.zstd', 'raw XML')"));
+        assert!(app.contains("this.rawXmlById ||= await loadRawXmlFromFile()"));
         assert!(index.contains("v-for=\"sourceId in def.references_in\""));
         assert!(index.contains("definitionDisplayName(definitionById(sourceId))"));
 
@@ -64,6 +66,11 @@ mod tests {
         let data: serde_json::Value = serde_json::from_slice(&json)?;
         assert!(data["categories"].is_array());
         assert!(data["stats"].is_object());
+
+        let compressed_raw_xml = fs::read(output_dir.join("raw-xml.json.zstd"))?;
+        let raw_xml_json = zstd::decode_all(compressed_raw_xml.as_slice())?;
+        let raw_xml: serde_json::Value = serde_json::from_slice(&raw_xml_json)?;
+        assert!(raw_xml.is_object());
 
         fs::remove_dir_all(output_dir)?;
         Ok(())

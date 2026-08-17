@@ -3,7 +3,7 @@ use anyhow::Result;
 use chrono::Utc;
 use serde::Serialize;
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -29,7 +29,7 @@ impl DatasetGenerator {
         }
     }
 
-    pub(crate) fn generate_dataset_file(&self, output_dir: &Path) -> Result<()> {
+    pub(crate) fn generate_dataset_files(&self, output_dir: &Path) -> Result<()> {
         println!("\nGenerating compressed dataset file...");
 
         let compressed_data = self.create_compressed_data()?;
@@ -41,6 +41,16 @@ impl DatasetGenerator {
             "  ✓ Dataset file written: {} ({} bytes)",
             dataset_path.display(),
             compressed_data.len()
+        );
+
+        println!("\nGenerating compressed raw XML file...");
+        let compressed_raw_xml = self.create_compressed_raw_xml()?;
+        let raw_xml_path = output_dir.join("raw-xml.json.zstd");
+        fs::write(&raw_xml_path, &compressed_raw_xml)?;
+        println!(
+            "  ✓ Raw XML file written: {} ({} bytes)",
+            raw_xml_path.display(),
+            compressed_raw_xml.len()
         );
 
         Ok(())
@@ -94,19 +104,32 @@ impl DatasetGenerator {
             }
         });
 
-        let json_data = serde_json::to_string(&data)?;
-        println!("      JSON size: {} bytes", json_data.len());
+        let json_data = serde_json::to_vec(&data)?;
+        Self::compress_json(&json_data)
+    }
 
+    fn create_compressed_raw_xml(&self) -> Result<Vec<u8>> {
+        let raw_xml: BTreeMap<&str, &str> = self
+            .definitions
+            .iter()
+            .map(|definition| (definition.id.as_str(), definition.raw_xml.as_str()))
+            .collect();
+        let json_data = serde_json::to_vec(&raw_xml)?;
+        Self::compress_json(&json_data)
+    }
+
+    fn compress_json(json_data: &[u8]) -> Result<Vec<u8>> {
+        println!("      JSON size: {} bytes", json_data.len());
         let mut encoder = zstd::Encoder::new(Vec::new(), 19)?;
         encoder.long_distance_matching(true)?;
         encoder.multithread(16)?;
-        encoder.write_all(json_data.as_bytes())?;
+        encoder.write_all(json_data)?;
         let compressed = encoder.finish()?;
 
         println!(
             "      Compressed size: {} bytes ({}% reduction)",
             compressed.len(),
-            100 - (compressed.len() * 100 / json_data.len())
+            100usize.saturating_sub(compressed.len() * 100 / json_data.len())
         );
 
         Ok(compressed)
@@ -172,7 +195,6 @@ struct DefinitionPayload<'a> {
     references_out: Vec<ReferencePayload<'a>>,
     #[serde(skip_serializing_if = "<[String]>::is_empty")]
     code_references: &'a [String],
-    raw_xml: &'a str,
 }
 
 impl<'a> From<&'a RimWorldDef> for DefinitionPayload<'a> {
@@ -193,7 +215,6 @@ impl<'a> From<&'a RimWorldDef> for DefinitionPayload<'a> {
                 .map(ReferencePayload::from)
                 .collect(),
             code_references: &definition.code_references,
-            raw_xml: &definition.raw_xml,
         }
     }
 }
@@ -334,6 +355,7 @@ mod tests {
                 assert!(definition.get("def_type").is_none());
                 assert!(definition.get("elements").is_none());
                 assert!(definition.get("extension").is_none());
+                assert!(definition.get("raw_xml").is_none());
                 if definition["def_name"] != "Beta" {
                     assert!(definition.get("is_abstract").is_none());
                 }
@@ -343,6 +365,14 @@ mod tests {
         assert_eq!(data["stats"]["total_categories"], 3);
         assert_eq!(data["stats"]["total_files"], 3);
         assert_eq!(data["stats"]["game_version"], "Unknown");
+
+        let compressed_raw_xml = generator.create_compressed_raw_xml()?;
+        let raw_xml_json = zstd::decode_all(compressed_raw_xml.as_slice())?;
+        let raw_xml: serde_json::Value = serde_json::from_slice(&raw_xml_json)?;
+        assert_eq!(
+            raw_xml["Data/Core/Abilities.xml#Alpha"],
+            "<AbilityDef><defName>Alpha</defName></AbilityDef>"
+        );
 
         Ok(())
     }

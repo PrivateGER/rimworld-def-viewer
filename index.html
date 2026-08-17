@@ -252,15 +252,16 @@
                                             <div class="xml-header">
                                                 <h4>XML Definition</h4>
                                                 <div>
-                                                    <button class="btn xml-toggle" @click.stop="toggleXML(def.id)">
-                                                        {{ showXML.has(def.id) ? 'Hide XML' : 'Show XML' }}
+                                                    <button class="btn xml-toggle" :disabled="rawXmlLoadingId !== null" @click.stop="toggleXML(def.id)">
+                                                        {{ rawXmlLoadingId === def.id ? 'Loading XML…' : (showXML.has(def.id) ? 'Hide XML' : 'Show XML') }}
                                                     </button>
-                                                    <button v-if="showXML.has(def.id)" class="btn xml-copy" @click.stop="copyXML(def.raw_xml)">
+                                                    <button v-if="showXML.has(def.id)" class="btn xml-copy" @click.stop="copyXML(rawXmlFor(def.id))">
                                                         Copy XML
                                                     </button>
                                                 </div>
                                             </div>
-                                            <div v-if="showXML.has(def.id)" class="xml-display" v-html="formatXML(def.raw_xml)" @click.stop></div>
+                                            <p v-if="rawXmlLoadError?.definitionId === def.id" class="error">{{ rawXmlLoadError.message }}</p>
+                                            <div v-if="showXML.has(def.id)" class="xml-display" v-html="formatXML(rawXmlFor(def.id))" @click.stop></div>
                                         </div>
                                     </div>
 
