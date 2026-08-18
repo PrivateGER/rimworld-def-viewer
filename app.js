@@ -32,6 +32,10 @@ function extensionFromFilePath(filePath) {
     return pathParts[0] === 'Data' && pathParts[1] ? pathParts[1] : 'Unknown';
 }
 
+const SEARCH_MIN_LENGTH = 3;
+const SEARCH_DEBOUNCE_MS = 150;
+const SEARCH_RESULT_BATCH_SIZE = 50;
+
 const { createApp } = Vue;
 
 createApp({
@@ -41,49 +45,91 @@ createApp({
             categories: [],
             stats: { total_defs: 0, total_categories: 0, total_files: 0 },
             defsById: {},
+            definitionIndex: [],
             rawXmlById: null,
+            rawXmlLoadPromise: null,
 
             // Filters and Search
+            searchInput: '',
             searchQuery: '',
             typeFilter: 'all',
             extensionFilter: 'all',
+            searchResultLimit: SEARCH_RESULT_BATCH_SIZE,
+            searchDebounceTimer: null,
 
             // UI State
             activeCategory: 'overview',
             expandedDefs: new Set(),
-            showXML: new Set(),
             mobileMenuOpen: false,
+            xmlDefinitionId: null,
+            xmlReturnFocus: null,
+            copyStatus: '',
+            copyStatusTimer: null,
 
             // Loading State
             loading: true,
             error: null,
-            rawXmlLoadingId: null,
+            rawXmlLoadingIds: new Set(),
             rawXmlLoadError: null
         }
     },
     computed: {
+        trimmedSearchQuery() {
+            return this.searchQuery.trim().toLowerCase();
+        },
+        isShortSearch() {
+            const length = this.trimmedSearchQuery.length;
+            return length > 0 && length < SEARCH_MIN_LENGTH;
+        },
+        searchCharactersNeeded() {
+            return Math.max(0, SEARCH_MIN_LENGTH - this.trimmedSearchQuery.length);
+        },
         hasActiveFilters() {
             return Boolean(
-                this.searchQuery ||
+                this.trimmedSearchQuery ||
                 this.typeFilter !== 'all' ||
                 this.extensionFilter !== 'all'
             );
+        },
+        searchResults() {
+            const query = this.trimmedSearchQuery;
+            if (query && query.length < SEARCH_MIN_LENGTH) {
+                return [];
+            }
+
+            return this.definitionIndex
+                .filter(entry => this._matchesSelectedFilters(entry.definition))
+                .map(entry => ({ entry, rank: query ? this._searchRank(entry, query) : 0 }))
+                .filter(result => result.rank !== null)
+                .sort((left, right) => left.rank - right.rank || left.entry.order - right.entry.order)
+                .map(result => result.entry.definition);
+        },
+        visibleSearchResults() {
+            return this.searchResults.slice(0, this.searchResultLimit);
+        },
+        hasMoreSearchResults() {
+            return this.visibleSearchResults.length < this.searchResults.length;
+        },
+        searchResultIds() {
+            return new Set(this.searchResults.map(definition => definition.id));
+        },
+        searchResultCountsByCategory() {
+            const counts = new Map();
+            for (const definition of this.searchResults) {
+                counts.set(definition.def_type, (counts.get(definition.def_type) || 0) + 1);
+            }
+            return counts;
         },
         visibleCategories() {
             if (!this.hasActiveFilters) {
                 return this.categories;
             }
 
-            return this.categories.filter(category =>
-                this.getFilteredDefinitions(category).length > 0
-            );
+            return this.categories.filter(category => this.searchResultCountsByCategory.has(category.name));
         },
         displayedCategories() {
-            if (this.activeCategory === 'overview') {
+            if (this.activeCategory === 'overview' || this.activeCategory === 'all') {
                 return [];
-            }
-            if (this.activeCategory === 'all') {
-                return this.visibleCategories;
             }
 
             const category = this.visibleCategories.find(
@@ -92,9 +138,15 @@ createApp({
             return category ? [category] : [];
         },
         filteredDefinitionsCount() {
+            if (this.activeCategory === 'all') {
+                return this.searchResults.length;
+            }
             return this.visibleCategories.reduce((total, category) => {
                 return total + this.getFilteredDefinitions(category).length;
             }, 0);
+        },
+        xmlDefinition() {
+            return this.definitionById(this.xmlDefinitionId);
         },
         hasUnknownExtension() {
             return this.categories.some(category =>
@@ -106,6 +158,7 @@ createApp({
         async loadData() {
             try {
                 this.loading = true;
+                this.error = null;
 
                 const data = await loadDataFromFile();
                 this.categories = data.categories;
@@ -126,6 +179,7 @@ createApp({
                         this.defsById[def.id] = defInfo;
                     }
                 }
+                this.rebuildDefinitionIndex();
 
                 // Rebuild unique reverse edges while keeping references as IDs.
                 for (const category of this.categories) {
@@ -150,6 +204,52 @@ createApp({
                 return Promise.reject(error);
             }
         },
+        retryLoadData() {
+            return this.loadData().then(() => this.applyHashOnLoad());
+        },
+        rebuildDefinitionIndex() {
+            let order = 0;
+            this.definitionIndex = this.categories.flatMap(category =>
+                category.definitions.map(definition => this._createSearchEntry(definition, order++))
+            );
+        },
+        _createSearchEntry(definition, order) {
+            const normalize = value => String(value || '').toLowerCase();
+            return {
+                definition,
+                order,
+                defName: normalize(definition.def_name),
+                inheritanceName: normalize(definition.inheritance_name),
+                label: normalize(definition.label),
+                description: normalize(definition.description),
+                tags: (definition.tags || []).map(normalize).join(' '),
+                defType: normalize(definition.def_type)
+            };
+        },
+        _searchRank(entry, query) {
+            if (entry.defName === query || entry.inheritanceName === query) {
+                return 0;
+            }
+            if (entry.defName.startsWith(query) || entry.inheritanceName.startsWith(query)) {
+                return 1;
+            }
+            if (entry.defName.includes(query) || entry.inheritanceName.includes(query) || entry.label.includes(query)) {
+                return 2;
+            }
+            if (entry.description.includes(query) || entry.tags.includes(query) || entry.defType.includes(query)) {
+                return 3;
+            }
+            return null;
+        },
+        _matchesSelectedFilters(definition) {
+            if (this.typeFilter === 'abstract' && !definition.is_abstract) {
+                return false;
+            }
+            if (this.typeFilter === 'concrete' && definition.is_abstract) {
+                return false;
+            }
+            return this.extensionFilter === 'all' || definition.extension === this.extensionFilter;
+        },
         setActiveCategory(category) {
             this.activeCategory = category;
             this.closeMobileMenu();
@@ -162,44 +262,25 @@ createApp({
         },
         setTypeFilter(filter) {
             this.typeFilter = filter;
+            this.searchResultLimit = SEARCH_RESULT_BATCH_SIZE;
             this._syncFilteredCategory();
         },
         setExtensionFilter(filter) {
             this.extensionFilter = filter;
+            this.searchResultLimit = SEARCH_RESULT_BATCH_SIZE;
             this._syncFilteredCategory();
         },
         getFilteredDefinitions(category) {
-            let filtered = category.definitions;
-
-            // Apply search filter
-            if (this.searchQuery) {
-                const query = this.searchQuery.toLowerCase();
-                filtered = filtered.filter(def => {
-                    return (def.def_name && def.def_name.toLowerCase().includes(query)) ||
-                        (def.inheritance_name && def.inheritance_name.toLowerCase().includes(query)) ||
-                           (def.label && def.label.toLowerCase().includes(query)) ||
-                           (def.description && def.description.toLowerCase().includes(query)) ||
-                           (def.tags && def.tags.some(tag => tag.toLowerCase().includes(query))) ||
-                           def.def_type.toLowerCase().includes(query);
-                });
+            if (!this.hasActiveFilters) {
+                return category.definitions;
             }
-
-            // Apply type filter
-            if (this.typeFilter === 'abstract') {
-                filtered = filtered.filter(def => def.is_abstract);
-            } else if (this.typeFilter === 'concrete') {
-                filtered = filtered.filter(def => !def.is_abstract);
-            }
-
-            // Apply extension filter
-            if (this.extensionFilter !== 'all') {
-                filtered = filtered.filter(def => def.extension === this.extensionFilter);
-            }
-
-            return filtered;
+            return category.definitions.filter(definition => this.searchResultIds.has(definition.id));
         },
         getVisibleCount(category) {
-            return this.getFilteredDefinitions(category).length;
+            if (!this.hasActiveFilters) {
+                return category.definitions.length;
+            }
+            return this.searchResultCountsByCategory.get(category.name) || 0;
         },
         definitionById(definitionId) {
             return this.defsById[definitionId]?.def;
@@ -214,7 +295,32 @@ createApp({
             return definition.references_out.find(reference => reference.kind === 'parent');
         },
         performSearch() {
+            clearTimeout(this.searchDebounceTimer);
+            this.searchDebounceTimer = setTimeout(() => this.applySearch(), SEARCH_DEBOUNCE_MS);
+        },
+        applySearch() {
+            clearTimeout(this.searchDebounceTimer);
+            this.searchDebounceTimer = null;
+            this.searchQuery = this.searchInput.trim();
+            this.searchResultLimit = SEARCH_RESULT_BATCH_SIZE;
             this._syncFilteredCategory();
+        },
+        clearSearch() {
+            this.searchInput = '';
+            this.searchQuery = '';
+            this.searchResultLimit = SEARCH_RESULT_BATCH_SIZE;
+            this._syncFilteredCategory();
+        },
+        clearAllFilters() {
+            this.searchInput = '';
+            this.searchQuery = '';
+            this.typeFilter = 'all';
+            this.extensionFilter = 'all';
+            this.searchResultLimit = SEARCH_RESULT_BATCH_SIZE;
+            this._syncFilteredCategory();
+        },
+        showMoreSearchResults() {
+            this.searchResultLimit += SEARCH_RESULT_BATCH_SIZE;
         },
         _syncFilteredCategory() {
             if (this.hasActiveFilters) {
@@ -227,29 +333,45 @@ createApp({
         toggleDef(definitionId) {
             this.expandedDefs = this._toggleSet(this.expandedDefs, definitionId);
         },
-        async toggleXML(definitionId) {
-            if (this.showXML.has(definitionId)) {
-                this.showXML = this._toggleSet(this.showXML, definitionId);
-                return;
+        async openXML(definitionId, event) {
+            this.rawXmlLoadingIds = this._toggleSet(this.rawXmlLoadingIds, definitionId, true);
+            if (this.rawXmlLoadError?.definitionId === definitionId) {
+                this.rawXmlLoadError = null;
             }
-
-            this.rawXmlLoadingId = definitionId;
-            this.rawXmlLoadError = null;
             try {
-                this.rawXmlById ||= await loadRawXmlFromFile();
+                if (!this.rawXmlById) {
+                    this.rawXmlLoadPromise ||= loadRawXmlFromFile();
+                    this.rawXmlById = await this.rawXmlLoadPromise;
+                    this.rawXmlLoadPromise = null;
+                }
                 if (!Object.hasOwn(this.rawXmlById, definitionId)) {
                     throw new Error(`Raw XML not found for ${definitionId}`);
                 }
-                this.showXML = this._toggleSet(this.showXML, definitionId);
+                this.xmlReturnFocus = event?.currentTarget || null;
+                this.xmlDefinitionId = definitionId;
+                this.copyStatus = '';
+                this.$nextTick?.(() => this.$refs?.xmlCloseButton?.focus());
             } catch (error) {
+                this.rawXmlLoadPromise = null;
                 this.rawXmlLoadError = { definitionId, message: error.message };
             } finally {
-                this.rawXmlLoadingId = null;
+                this.rawXmlLoadingIds = this._toggleSet(this.rawXmlLoadingIds, definitionId, false);
             }
         },
-        _toggleSet(set, item) {
+        closeXML(restoreFocus = true) {
+            const returnFocus = this.xmlReturnFocus;
+            this.xmlDefinitionId = null;
+            this.copyStatus = '';
+            this.xmlReturnFocus = null;
+            if (restoreFocus !== false) {
+                this.$nextTick?.(() => returnFocus?.focus());
+            }
+        },
+        _toggleSet(set, item, force) {
             const newSet = new Set(set);
-            if (newSet.has(item)) {
+            if (force === true) {
+                newSet.add(item);
+            } else if (force === false || newSet.has(item)) {
                 newSet.delete(item);
             } else {
                 newSet.add(item);
@@ -374,12 +496,18 @@ createApp({
             return this.rawXmlById?.[definitionId] || '';
         },
         async copyXML(xml) {
+            let copied = true;
             try {
                 await navigator.clipboard.writeText(xml);
             } catch (err) {
                 // Fallback for older browsers
-                this._fallbackCopy(xml);
+                copied = this._fallbackCopy(xml);
             }
+            this.copyStatus = copied ? 'XML copied to clipboard.' : 'Unable to copy XML.';
+            clearTimeout(this.copyStatusTimer);
+            this.copyStatusTimer = setTimeout(() => {
+                this.copyStatus = '';
+            }, 2000);
         },
         _fallbackCopy(text) {
             const textArea = document.createElement('textarea');
@@ -388,12 +516,78 @@ createApp({
             textArea.style.opacity = '0';
             document.body.appendChild(textArea);
             textArea.select();
+            let copied = false;
             try {
-                document.execCommand('copy');
+                copied = document.execCommand('copy');
             } catch (err) {
                 console.error('Copy failed:', err);
             }
             document.body.removeChild(textArea);
+            return copied;
+        },
+        handleGlobalKeydown(event) {
+            const tagName = event.target?.tagName?.toLowerCase();
+            const isControl = ['input', 'textarea', 'select', 'button', 'a'].includes(tagName) || event.target?.isContentEditable;
+
+            if (event.key === '/' && !isControl) {
+                event.preventDefault();
+                this.$refs?.searchInput?.focus();
+                return;
+            }
+
+            if (event.key === 'Escape' && this.xmlDefinitionId) {
+                event.preventDefault();
+                this.closeXML();
+                return;
+            }
+
+            if (event.key === 'Escape' && !this.xmlDefinitionId && (this.searchInput || this.searchQuery)) {
+                event.preventDefault();
+                this.clearSearch();
+                this.$refs?.searchInput?.focus();
+                return;
+            }
+
+            if (!this.xmlDefinitionId && this.activeCategory === 'all' && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
+                const results = Array.from(document.querySelectorAll('.search-result-summary'));
+                if (results.length === 0) {
+                    return;
+                }
+                event.preventDefault();
+                const currentIndex = results.indexOf(document.activeElement);
+                const delta = event.key === 'ArrowDown' ? 1 : -1;
+                const nextIndex = currentIndex === -1
+                    ? (delta === 1 ? 0 : results.length - 1)
+                    : (currentIndex + delta + results.length) % results.length;
+                results[nextIndex].focus();
+            }
+        },
+        handleDrawerKeydown(event) {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                this.closeXML();
+                return;
+            }
+            if (event.key !== 'Tab') {
+                return;
+            }
+
+            const focusable = Array.from(this.$refs?.xmlDrawer?.querySelectorAll(
+                'button:not([disabled]), [href], input, textarea, select, [tabindex]:not([tabindex="-1"])'
+            ) || []);
+            if (focusable.length === 0) {
+                return;
+            }
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
         },
         scrollToDefinitionById(definitionId) {
             const defInfo = this.defsById[definitionId];
@@ -406,12 +600,18 @@ createApp({
         },
         scrollToDefinition(defInfo, updateHash) {
             const definitionId = defInfo.def.id;
+            const focusTarget = Boolean(this.xmlDefinitionId);
+
+            if (focusTarget) {
+                this.closeXML(false);
+            }
 
             // Set the category to show the definition
             this.activeCategory = defInfo.category;
 
             // Clear search to ensure def is visible
             this.searchQuery = '';
+            this.searchInput = '';
             this.typeFilter = 'all';
             this.extensionFilter = 'all';
 
@@ -419,10 +619,6 @@ createApp({
             this.expandedDefs.clear();
             this.expandedDefs.add(definitionId);
             this.expandedDefs = new Set(this.expandedDefs);
-
-            // Clear XML display state
-            this.showXML.clear();
-            this.showXML = new Set(this.showXML);
 
             // Update URL hash
             if (updateHash) {
@@ -432,7 +628,7 @@ createApp({
             // Wait for Vue to update the DOM
             this.$nextTick(() => {
                 requestAnimationFrame(() => {
-                    this._scrollToElement(definitionId);
+                    this._scrollToElement(definitionId, focusTarget);
                 });
             });
         },
@@ -458,9 +654,12 @@ createApp({
         definitionElementId(definitionId) {
             return `def-${encodeURIComponent(definitionId)}`;
         },
-        _scrollToElement(definitionId) {
+        _scrollToElement(definitionId, focusElement = false) {
             const element = document.getElementById(this.definitionElementId(definitionId));
             if (element) {
+                if (focusElement) {
+                    element.focus({ preventScroll: true });
+                }
                 element.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 // Add a highlight effect
                 element.style.transition = 'box-shadow 0.3s ease';
@@ -486,8 +685,12 @@ createApp({
 
         // Listen for hash changes (browser back/forward)
         window.addEventListener('hashchange', this.handleHashChange);
+        window.addEventListener('keydown', this.handleGlobalKeydown);
     },
     beforeUnmount() {
+        clearTimeout(this.searchDebounceTimer);
+        clearTimeout(this.copyStatusTimer);
         window.removeEventListener('hashchange', this.handleHashChange);
+        window.removeEventListener('keydown', this.handleGlobalKeydown);
     }
 }).mount('#app');

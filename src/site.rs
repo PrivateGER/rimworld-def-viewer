@@ -57,9 +57,12 @@ mod tests {
         assert!(app.contains("def.extension = extensionFromFilePath(def.file_path)"));
         assert!(app.contains("target.references_in.push(def.id)"));
         assert!(app.contains("loadCompressedJson('raw-xml.json.zstd', 'raw XML')"));
-        assert!(app.contains("this.rawXmlById ||= await loadRawXmlFromFile()"));
+        assert!(app.contains("this.rawXmlLoadPromise ||= loadRawXmlFromFile()"));
+        assert!(app.contains("SEARCH_RESULT_BATCH_SIZE = 50"));
         assert!(index.contains("v-for=\"sourceId in def.references_in\""));
         assert!(index.contains("definitionDisplayName(definitionById(sourceId))"));
+        assert!(index.contains("class=\"search-results-list\""));
+        assert!(index.contains("class=\"xml-drawer\""));
 
         let compressed = fs::read(output_dir.join("dataset.json.zstd"))?;
         let json = zstd::decode_all(compressed.as_slice())?;

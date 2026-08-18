@@ -80,10 +80,12 @@
                     <div class="search-container">
                         <div class="search-icon">🔍</div>
                         <input
-                            v-model="searchQuery"
+                            ref="searchInput"
+                            v-model="searchInput"
                             type="text"
                             class="search-box"
                             placeholder="Search definitions by name, type, or content..."
+                            aria-label="Search definitions"
                             @input="performSearch">
                     </div>
 
@@ -138,6 +140,7 @@
                     <div v-else-if="error" class="error">
                         <h3>Error loading data</h3>
                         <p>{{ error }}</p>
+                        <button type="button" class="primary-action" @click="retryLoadData">Retry</button>
                     </div>
 
                     <div v-else>
@@ -189,6 +192,173 @@
                             <p class="legal-note">Portions of the materials used to create this content are trademarks and copyrighted works of Ludeon Studios Inc. All rights reserved by Ludeon. This content is not official and is not endorsed by Ludeon.</p>
                         </section>
 
+                        <section v-if="activeCategory === 'all'" class="search-results-section" aria-labelledby="search-results-title">
+                            <div v-if="isShortSearch" class="search-state" role="status" aria-live="polite">
+                                <h2 id="search-results-title">Keep typing</h2>
+                                <p>
+                                    Type {{ searchCharactersNeeded }} more
+                                    {{ searchCharactersNeeded === 1 ? 'character' : 'characters' }} to search all definitions.
+                                </p>
+                            </div>
+
+                            <template v-else>
+                                <div class="search-results-header">
+                                    <div>
+                                        <h2 id="search-results-title">Search results</h2>
+                                        <p v-if="trimmedSearchQuery">Ranked matches for “{{ searchQuery }}”</p>
+                                        <p v-else>Definitions matching the selected filters</p>
+                                    </div>
+                                    <p class="search-results-count" role="status" aria-live="polite">
+                                        Showing {{ visibleSearchResults.length }} of {{ searchResults.length }}
+                                    </p>
+                                </div>
+
+                                <div v-if="searchResults.length === 0" class="search-state">
+                                    <h3>No definitions found</h3>
+                                    <p v-if="trimmedSearchQuery">No results match “{{ searchQuery }}”. Try another term or clear the filters.</p>
+                                    <p v-else>No definitions match the selected filters.</p>
+                                    <button type="button" class="primary-action" @click="clearAllFilters">Clear search and filters</button>
+                                </div>
+
+                                <div v-else class="search-results-list" role="list">
+                                    <article v-for="def in visibleSearchResults"
+                                             :key="def.id"
+                                             class="search-result"
+                                             :class="{ expanded: expandedDefs.has(def.id) }"
+                                             :id="definitionElementId(def.id)"
+                                             tabindex="-1"
+                                             role="listitem">
+                                        <button type="button"
+                                                class="search-result-summary"
+                                                :aria-expanded="expandedDefs.has(def.id)"
+                                                :aria-controls="`search-details-${def.id}`"
+                                                @click="toggleDef(def.id)">
+                                            <span class="search-result-heading">
+                                                <span class="def-name">{{ definitionDisplayName(def) }}</span>
+                                                <span class="def-type">{{ def.def_type }}</span>
+                                                <span class="extension-badge" :class="def.extension.toLowerCase()">{{ def.extension }}</span>
+                                            </span>
+                                            <span v-if="def.label" class="search-result-label">{{ def.label }}</span>
+                                            <span v-if="def.description" class="search-result-description">{{ def.description }}</span>
+                                            <span class="file-path">{{ def.file_path }}</span>
+                                            <span class="search-result-indicator" aria-hidden="true">{{ expandedDefs.has(def.id) ? '−' : '+' }}</span>
+                                        </button>
+
+                                        <div v-if="expandedDefs.has(def.id)"
+                                             :id="`search-details-${def.id}`"
+                                             class="search-result-details">
+                                            <div v-if="def.parent_name" class="def-parent">
+                                                <strong class="def-parent-label">Parent:</strong>
+                                                <template v-if="parentReference(def)">
+                                                    <button v-for="targetId in parentReference(def).targets"
+                                                            :key="targetId"
+                                                            type="button"
+                                                            class="def-parent-link"
+                                                            :title="definitionById(targetId)?.file_path"
+                                                            @click="scrollToDefinitionById(targetId)">
+                                                        {{ definitionDisplayName(definitionById(targetId)) }}
+                                                    </button>
+                                                </template>
+                                                <span v-else class="def-parent-name">{{ def.parent_name }}</span>
+                                            </div>
+
+                                            <div class="tags" v-if="def.tags && def.tags.length > 0">
+                                                <span v-for="tag in def.tags" :key="tag"
+                                                      class="tag"
+                                                      :class="{ abstract: tag === 'Abstract', parent: tag === 'Inherits' }">{{ tag }}</span>
+                                            </div>
+
+                                            <div v-if="def.references_in && def.references_in.length > 0" class="reference-section">
+                                                <h4>Referenced by ({{ def.references_in.length }})</h4>
+                                                <div class="reference-list">
+                                                    <button v-for="sourceId in def.references_in"
+                                                            :key="sourceId"
+                                                            type="button"
+                                                            class="reference-item"
+                                                            :title="definitionById(sourceId)?.file_path"
+                                                            @click="scrollToDefinitionById(sourceId)">
+                                                        {{ definitionDisplayName(definitionById(sourceId)) }}
+                                                        <span class="ref-type-badge">{{ definitionById(sourceId)?.def_type }}</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <div v-if="referencesByKind(def, 'definition').length > 0" class="reference-section">
+                                                <h4>References ({{ referencesByKind(def, 'definition').length }})</h4>
+                                                <div class="reference-list">
+                                                    <template v-for="reference in referencesByKind(def, 'definition')" :key="reference.name">
+                                                        <button v-for="targetId in reference.targets"
+                                                                :key="targetId"
+                                                                type="button"
+                                                                class="reference-item"
+                                                                :title="definitionById(targetId)?.file_path"
+                                                                @click="scrollToDefinitionById(targetId)">
+                                                            {{ reference.name }}
+                                                            <span class="ref-type-badge">
+                                                                {{ definitionById(targetId)?.def_type }}{{ reference.targets.length > 1 ? ' · candidate' : '' }}
+                                                            </span>
+                                                        </button>
+                                                    </template>
+                                                </div>
+                                            </div>
+
+                                            <div v-if="referencesByKind(def, 'heuristic').length > 0" class="reference-section">
+                                                <h4>Possible references ({{ referencesByKind(def, 'heuristic').length }})</h4>
+                                                <div class="reference-list">
+                                                    <template v-for="reference in referencesByKind(def, 'heuristic')" :key="reference.name">
+                                                        <button v-for="targetId in reference.targets"
+                                                                :key="targetId"
+                                                                type="button"
+                                                                class="reference-item"
+                                                                :title="definitionById(targetId)?.file_path"
+                                                                @click="scrollToDefinitionById(targetId)">
+                                                            {{ reference.name }}
+                                                            <span class="ref-type-badge">
+                                                                {{ definitionById(targetId)?.def_type }} · possible
+                                                            </span>
+                                                        </button>
+                                                    </template>
+                                                </div>
+                                            </div>
+
+                                            <div v-if="def.code_references && def.code_references.length > 0" class="reference-section">
+                                                <h4>C# References ({{ def.code_references.length }})</h4>
+                                                <div class="reference-list">
+                                                    <span v-for="className in def.code_references"
+                                                          :key="className"
+                                                          class="code-reference-item">{{ className }}</span>
+                                                </div>
+                                            </div>
+
+                                            <div v-if="(!def.references_in || def.references_in.length === 0) && (!def.references_out || def.references_out.length === 0) && (!def.code_references || def.code_references.length === 0)" class="no-references">
+                                                No references found
+                                            </div>
+
+                                            <div class="xml-actions">
+                                                <button type="button"
+                                                        class="primary-action"
+                                                        :disabled="rawXmlLoadingIds.has(def.id)"
+                                                        :aria-busy="rawXmlLoadingIds.has(def.id)"
+                                                        @click="openXML(def.id, $event)">
+                                                    {{ rawXmlLoadingIds.has(def.id) ? 'Loading source XML…' : (rawXmlLoadError?.definitionId === def.id ? 'Retry source XML' : 'View source XML') }}
+                                                </button>
+                                                <p v-if="rawXmlLoadError?.definitionId === def.id" class="inline-error" role="alert">
+                                                    {{ rawXmlLoadError.message }}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </article>
+                                </div>
+
+                                <button v-if="hasMoreSearchResults"
+                                        type="button"
+                                        class="show-more"
+                                        @click="showMoreSearchResults">
+                                    Show {{ Math.min(50, searchResults.length - visibleSearchResults.length) }} more
+                                </button>
+                            </template>
+                        </section>
+
                         <section v-for="category in displayedCategories" :key="category.name"
                                  class="def-category">
                             <div class="category-header">
@@ -201,6 +371,7 @@
                                          class="def-item"
                                          :class="{ expanded: expandedDefs.has(def.id) }"
                                          :id="definitionElementId(def.id)"
+                                         tabindex="-1"
                                          @click="toggleDef(def.id)">
                                     <div class="def-header">
                                         <h3 class="def-name">{{ def.def_name || def.inheritance_name || 'Unnamed definition' }}</h3>
@@ -243,14 +414,15 @@
                                         <div v-if="def.references_in && def.references_in.length > 0" class="reference-section">
                                             <h4>Referenced by ({{ def.references_in.length }})</h4>
                                             <div class="reference-list">
-                                                <span v-for="sourceId in def.references_in"
-                                                      :key="sourceId"
-                                                      class="reference-item"
-                                                      :title="definitionById(sourceId)?.file_path"
-                                                      @click.stop="scrollToDefinitionById(sourceId)">
+                                                <button v-for="sourceId in def.references_in"
+                                                        :key="sourceId"
+                                                        type="button"
+                                                        class="reference-item"
+                                                        :title="definitionById(sourceId)?.file_path"
+                                                        @click.stop="scrollToDefinitionById(sourceId)">
                                                     {{ definitionDisplayName(definitionById(sourceId)) }}
                                                     <span class="ref-type-badge">{{ definitionById(sourceId)?.def_type }}</span>
-                                                </span>
+                                                </button>
                                             </div>
                                         </div>
 
@@ -258,16 +430,17 @@
                                             <h4>References ({{ referencesByKind(def, 'definition').length }})</h4>
                                             <div class="reference-list">
                                                 <template v-for="reference in referencesByKind(def, 'definition')" :key="reference.name">
-                                                    <span v-for="targetId in reference.targets"
-                                                          :key="targetId"
-                                                          class="reference-item"
-                                                          :title="definitionById(targetId)?.file_path"
-                                                          @click.stop="scrollToDefinitionById(targetId)">
+                                                    <button v-for="targetId in reference.targets"
+                                                            :key="targetId"
+                                                            type="button"
+                                                            class="reference-item"
+                                                            :title="definitionById(targetId)?.file_path"
+                                                            @click.stop="scrollToDefinitionById(targetId)">
                                                         {{ reference.name }}
                                                         <span class="ref-type-badge">
                                                             {{ definitionById(targetId)?.def_type }}{{ reference.targets.length > 1 ? ' · candidate' : '' }}
                                                         </span>
-                                                    </span>
+                                                    </button>
                                                 </template>
                                             </div>
                                         </div>
@@ -276,16 +449,17 @@
                                             <h4>Possible references ({{ referencesByKind(def, 'heuristic').length }})</h4>
                                             <div class="reference-list">
                                                 <template v-for="reference in referencesByKind(def, 'heuristic')" :key="reference.name">
-                                                    <span v-for="targetId in reference.targets"
-                                                          :key="targetId"
-                                                          class="reference-item"
-                                                          :title="definitionById(targetId)?.file_path"
-                                                          @click.stop="scrollToDefinitionById(targetId)">
+                                                    <button v-for="targetId in reference.targets"
+                                                            :key="targetId"
+                                                            type="button"
+                                                            class="reference-item"
+                                                            :title="definitionById(targetId)?.file_path"
+                                                            @click.stop="scrollToDefinitionById(targetId)">
                                                         {{ reference.name }}
                                                         <span class="ref-type-badge">
                                                             {{ definitionById(targetId)?.def_type }} · possible
                                                         </span>
-                                                    </span>
+                                                    </button>
                                                 </template>
                                             </div>
                                         </div>
@@ -305,20 +479,17 @@
                                             No references found
                                         </div>
 
-                                        <div class="xml-section" @click.stop>
-                                            <div class="xml-header">
-                                                <h4>XML Definition</h4>
-                                                <div>
-                                                    <button class="btn xml-toggle" :disabled="rawXmlLoadingId !== null" @click.stop="toggleXML(def.id)">
-                                                        {{ rawXmlLoadingId === def.id ? 'Loading XML…' : (showXML.has(def.id) ? 'Hide XML' : 'Show XML') }}
-                                                    </button>
-                                                    <button v-if="showXML.has(def.id)" class="btn xml-copy" @click.stop="copyXML(rawXmlFor(def.id))">
-                                                        Copy XML
-                                                    </button>
-                                                </div>
-                                            </div>
-                                            <p v-if="rawXmlLoadError?.definitionId === def.id" class="error">{{ rawXmlLoadError.message }}</p>
-                                            <div v-if="showXML.has(def.id)" class="xml-display" v-html="formatXML(rawXmlFor(def.id))" @click.stop></div>
+                                        <div class="xml-actions" @click.stop>
+                                            <button type="button"
+                                                    class="primary-action"
+                                                    :disabled="rawXmlLoadingIds.has(def.id)"
+                                                    :aria-busy="rawXmlLoadingIds.has(def.id)"
+                                                    @click="openXML(def.id, $event)">
+                                                {{ rawXmlLoadingIds.has(def.id) ? 'Loading source XML…' : (rawXmlLoadError?.definitionId === def.id ? 'Retry source XML' : 'View source XML') }}
+                                            </button>
+                                            <p v-if="rawXmlLoadError?.definitionId === def.id" class="inline-error" role="alert">
+                                                {{ rawXmlLoadError.message }}
+                                            </p>
                                         </div>
                                     </div>
 
@@ -331,7 +502,42 @@
             </main>
         </div>
 
-        <div v-if="!loading && !error" class="results-counter">
+        <div v-if="xmlDefinitionId"
+             class="xml-drawer-backdrop"
+             @click.self="closeXML">
+            <aside ref="xmlDrawer"
+                   class="xml-drawer"
+                   role="dialog"
+                   aria-modal="true"
+                   aria-labelledby="xml-drawer-title"
+                   @keydown="handleDrawerKeydown">
+                <header class="xml-drawer-header">
+                    <div>
+                        <p class="xml-drawer-eyebrow">Source XML</p>
+                        <h2 id="xml-drawer-title">{{ definitionDisplayName(xmlDefinition) }}</h2>
+                        <p class="xml-drawer-path">{{ xmlDefinition?.file_path }}</p>
+                    </div>
+                    <div class="xml-drawer-actions">
+                        <button type="button" class="secondary-action" @click="copyXML(rawXmlFor(xmlDefinitionId))">
+                            Copy XML
+                        </button>
+                        <button ref="xmlCloseButton"
+                                type="button"
+                                class="icon-action"
+                                aria-label="Close source XML"
+                                @click="closeXML">×</button>
+                    </div>
+                </header>
+                <p class="sr-only" aria-live="polite">{{ copyStatus }}</p>
+                <div class="xml-display"
+                     tabindex="0"
+                     role="region"
+                     aria-label="Source XML content, scrollable"
+                     v-html="formatXML(rawXmlFor(xmlDefinitionId))"></div>
+            </aside>
+        </div>
+
+        <div v-if="!loading && !error && activeCategory !== 'all'" class="results-counter">
             {{ filteredDefinitionsCount }} of {{ stats.total_defs }} definitions
         </div>
     </div>
