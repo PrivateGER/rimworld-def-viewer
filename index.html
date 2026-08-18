@@ -411,14 +411,15 @@
                                         <div v-if="def.references_in && def.references_in.length > 0" class="reference-section">
                                             <h4>Referenced by ({{ def.references_in.length }})</h4>
                                             <div class="reference-list">
-                                                <span v-for="sourceId in def.references_in"
-                                                      :key="sourceId"
-                                                      class="reference-item"
-                                                      :title="definitionById(sourceId)?.file_path"
-                                                      @click.stop="scrollToDefinitionById(sourceId)">
+                                                <button v-for="sourceId in def.references_in"
+                                                        :key="sourceId"
+                                                        type="button"
+                                                        class="reference-item"
+                                                        :title="definitionById(sourceId)?.file_path"
+                                                        @click.stop="scrollToDefinitionById(sourceId)">
                                                     {{ definitionDisplayName(definitionById(sourceId)) }}
                                                     <span class="ref-type-badge">{{ definitionById(sourceId)?.def_type }}</span>
-                                                </span>
+                                                </button>
                                             </div>
                                         </div>
 
@@ -426,16 +427,17 @@
                                             <h4>References ({{ referencesByKind(def, 'definition').length }})</h4>
                                             <div class="reference-list">
                                                 <template v-for="reference in referencesByKind(def, 'definition')" :key="reference.name">
-                                                    <span v-for="targetId in reference.targets"
-                                                          :key="targetId"
-                                                          class="reference-item"
-                                                          :title="definitionById(targetId)?.file_path"
-                                                          @click.stop="scrollToDefinitionById(targetId)">
+                                                    <button v-for="targetId in reference.targets"
+                                                            :key="targetId"
+                                                            type="button"
+                                                            class="reference-item"
+                                                            :title="definitionById(targetId)?.file_path"
+                                                            @click.stop="scrollToDefinitionById(targetId)">
                                                         {{ reference.name }}
                                                         <span class="ref-type-badge">
                                                             {{ definitionById(targetId)?.def_type }}{{ reference.targets.length > 1 ? ' · candidate' : '' }}
                                                         </span>
-                                                    </span>
+                                                    </button>
                                                 </template>
                                             </div>
                                         </div>
@@ -444,16 +446,17 @@
                                             <h4>Possible references ({{ referencesByKind(def, 'heuristic').length }})</h4>
                                             <div class="reference-list">
                                                 <template v-for="reference in referencesByKind(def, 'heuristic')" :key="reference.name">
-                                                    <span v-for="targetId in reference.targets"
-                                                          :key="targetId"
-                                                          class="reference-item"
-                                                          :title="definitionById(targetId)?.file_path"
-                                                          @click.stop="scrollToDefinitionById(targetId)">
+                                                    <button v-for="targetId in reference.targets"
+                                                            :key="targetId"
+                                                            type="button"
+                                                            class="reference-item"
+                                                            :title="definitionById(targetId)?.file_path"
+                                                            @click.stop="scrollToDefinitionById(targetId)">
                                                         {{ reference.name }}
                                                         <span class="ref-type-badge">
                                                             {{ definitionById(targetId)?.def_type }} · possible
                                                         </span>
-                                                    </span>
+                                                    </button>
                                                 </template>
                                             </div>
                                         </div>

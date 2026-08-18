@@ -144,6 +144,7 @@ a:focus-visible,
 
 .main-content {
     flex: 1;
+    min-width: 0;
     margin-left: var(--sidebar-width);
     min-height: 100vh;
 }
@@ -558,11 +559,6 @@ a:focus-visible,
     border-top: 1px solid var(--border);
 }
 
-.search-result-details .reference-item {
-    appearance: none;
-    font: inherit;
-}
-
 .show-more {
     display: block;
     margin: 1.25rem auto 0;
@@ -802,6 +798,8 @@ a:focus-visible,
 }
 
 .reference-item {
+    appearance: none;
+    font: inherit;
     background: var(--background-alt);
     padding: 0.25rem 0.75rem;
     border-radius: 0.25rem;
