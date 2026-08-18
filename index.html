@@ -226,6 +226,7 @@
                                              class="search-result"
                                              :class="{ expanded: expandedDefs.has(def.id) }"
                                              :id="definitionElementId(def.id)"
+                                             tabindex="-1"
                                              role="listitem">
                                         <button type="button"
                                                 class="search-result-summary"
@@ -237,6 +238,7 @@
                                                 <span class="def-type">{{ def.def_type }}</span>
                                                 <span class="extension-badge" :class="def.extension.toLowerCase()">{{ def.extension }}</span>
                                             </span>
+                                            <span v-if="def.label" class="search-result-label">{{ def.label }}</span>
                                             <span v-if="def.description" class="search-result-description">{{ def.description }}</span>
                                             <span class="file-path">{{ def.file_path }}</span>
                                             <span class="search-result-indicator" aria-hidden="true">{{ expandedDefs.has(def.id) ? '−' : '+' }}</span>
@@ -369,6 +371,7 @@
                                          class="def-item"
                                          :class="{ expanded: expandedDefs.has(def.id) }"
                                          :id="definitionElementId(def.id)"
+                                         tabindex="-1"
                                          @click="toggleDef(def.id)">
                                     <div class="def-header">
                                         <h3 class="def-name">{{ def.def_name || def.inheritance_name || 'Unnamed definition' }}</h3>

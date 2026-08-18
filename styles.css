@@ -524,6 +524,12 @@ a:focus-visible,
     overflow-wrap: anywhere;
 }
 
+.search-result-label {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    font-style: italic;
+}
+
 .search-result-description {
     display: -webkit-box;
     overflow: hidden;
@@ -532,6 +538,12 @@ a:focus-visible,
     line-height: 1.45;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
+}
+
+.search-result.expanded .search-result-description {
+    display: block;
+    overflow: visible;
+    -webkit-line-clamp: unset;
 }
 
 .search-result-summary .file-path {

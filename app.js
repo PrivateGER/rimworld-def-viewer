@@ -227,7 +227,7 @@ createApp({
             };
         },
         _searchRank(entry, query) {
-            if (entry.defName === query) {
+            if (entry.defName === query || entry.inheritanceName === query) {
                 return 0;
             }
             if (entry.defName.startsWith(query) || entry.inheritanceName.startsWith(query)) {
@@ -358,12 +358,14 @@ createApp({
                 this.rawXmlLoadingIds = this._toggleSet(this.rawXmlLoadingIds, definitionId, false);
             }
         },
-        closeXML() {
+        closeXML(restoreFocus = true) {
             const returnFocus = this.xmlReturnFocus;
             this.xmlDefinitionId = null;
             this.copyStatus = '';
             this.xmlReturnFocus = null;
-            this.$nextTick?.(() => returnFocus?.focus());
+            if (restoreFocus !== false) {
+                this.$nextTick?.(() => returnFocus?.focus());
+            }
         },
         _toggleSet(set, item, force) {
             const newSet = new Set(set);
@@ -598,6 +600,11 @@ createApp({
         },
         scrollToDefinition(defInfo, updateHash) {
             const definitionId = defInfo.def.id;
+            const focusTarget = Boolean(this.xmlDefinitionId);
+
+            if (focusTarget) {
+                this.closeXML(false);
+            }
 
             // Set the category to show the definition
             this.activeCategory = defInfo.category;
@@ -613,9 +620,6 @@ createApp({
             this.expandedDefs.add(definitionId);
             this.expandedDefs = new Set(this.expandedDefs);
 
-            // Close the source drawer when navigating to another definition.
-            this.xmlDefinitionId = null;
-
             // Update URL hash
             if (updateHash) {
                 window.location.hash = encodeURIComponent(definitionId);
@@ -624,7 +628,7 @@ createApp({
             // Wait for Vue to update the DOM
             this.$nextTick(() => {
                 requestAnimationFrame(() => {
-                    this._scrollToElement(definitionId);
+                    this._scrollToElement(definitionId, focusTarget);
                 });
             });
         },
@@ -650,9 +654,12 @@ createApp({
         definitionElementId(definitionId) {
             return `def-${encodeURIComponent(definitionId)}`;
         },
-        _scrollToElement(definitionId) {
+        _scrollToElement(definitionId, focusElement = false) {
             const element = document.getElementById(this.definitionElementId(definitionId));
             if (element) {
+                if (focusElement) {
+                    element.focus({ preventScroll: true });
+                }
                 element.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 // Add a highlight effect
                 element.style.transition = 'box-shadow 0.3s ease';

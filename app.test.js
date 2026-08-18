@@ -4,8 +4,10 @@ const vm = require('node:vm');
 const { test } = require('node:test');
 
 const appSource = fs.readFileSync(require.resolve('./app.js'), 'utf8');
+const indexSource = fs.readFileSync(require.resolve('./index.html'), 'utf8');
+const stylesSource = fs.readFileSync(require.resolve('./styles.css'), 'utf8');
 
-function createState(categories = defaultCategories()) {
+function createState(categories = defaultCategories(), globals = {}) {
     let component;
     const sandbox = {
         clearTimeout,
@@ -17,7 +19,8 @@ function createState(categories = defaultCategories()) {
                 component = options;
                 return { mount() {} };
             }
-        }
+        },
+        ...globals
     };
     vm.runInNewContext(appSource, sandbox, { filename: 'app.js' });
 
@@ -118,6 +121,32 @@ test('global search ranks names before descriptive matches', () => {
     );
 });
 
+test('global search ranks an exact inheritance name before prefixes', () => {
+    const state = createState([{
+        name: 'ThingDef',
+        definitions: [
+            definition('prefix', 'TemplateChild', 'ThingDef'),
+            definition('exact-inheritance', '', 'ThingDef', {
+                inheritance_name: 'Template',
+                is_abstract: true
+            })
+        ]
+    }]);
+
+    state.searchInput = 'template';
+    state.applySearch();
+
+    assert.deepEqual(
+        Array.from(state.searchResults, result => result.id),
+        ['exact-inheritance', 'prefix']
+    );
+});
+
+test('global results render labels and reveal full descriptions when expanded', () => {
+    assert.match(indexSource, /v-if="def\.label" class="search-result-label"/);
+    assert.match(stylesSource, /\.search-result\.expanded \.search-result-description\s*{[^}]*display: block;[^}]*-webkit-line-clamp: unset;/s);
+});
+
 test('search results are progressively disclosed in batches of 50', () => {
     const definitions = Array.from({ length: 120 }, (_, index) =>
         definition(`item-${index}`, `Item${index}`, 'ThingDef')
@@ -195,6 +224,31 @@ test('an XML lookup failure stays local to the initiating result', async () => {
     assert.equal(state.xmlDefinitionId, null);
     assert.equal(state.rawXmlLoadError.definitionId, 'steel');
     assert.match(state.rawXmlLoadError.message, /Raw XML not found/);
+});
+
+test('hash navigation from the XML drawer focuses the navigated definition', () => {
+    let targetFocused = false;
+    let triggerFocused = false;
+    const target = {
+        focus() { targetFocused = true; },
+        scrollIntoView() {},
+        style: {}
+    };
+    const state = createState(defaultCategories(), {
+        document: {
+            getElementById() { return target; }
+        },
+        requestAnimationFrame(callback) { callback(); },
+        window: { location: { hash: '' } }
+    });
+    state.xmlDefinitionId = 'medicine';
+    state.xmlReturnFocus = { focus() { triggerFocused = true; } };
+
+    state.scrollToDefinition(state.defsById.steel, false);
+
+    assert.equal(state.xmlDefinitionId, null);
+    assert.equal(triggerFocused, false);
+    assert.equal(targetFocused, true);
 });
 
 test('sidebar counts use the cached search state instead of re-filtering per category', () => {
