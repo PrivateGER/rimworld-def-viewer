@@ -110,13 +110,22 @@ createApp({
         hasMoreSearchResults() {
             return this.visibleSearchResults.length < this.searchResults.length;
         },
+        searchResultIds() {
+            return new Set(this.searchResults.map(definition => definition.id));
+        },
+        searchResultCountsByCategory() {
+            const counts = new Map();
+            for (const definition of this.searchResults) {
+                counts.set(definition.def_type, (counts.get(definition.def_type) || 0) + 1);
+            }
+            return counts;
+        },
         visibleCategories() {
             if (!this.hasActiveFilters) {
                 return this.categories;
             }
 
-            const matchingIds = new Set(this.searchResults.map(definition => definition.id));
-            return this.categories.filter(category => category.definitions.some(definition => matchingIds.has(definition.id)));
+            return this.categories.filter(category => this.searchResultCountsByCategory.has(category.name));
         },
         displayedCategories() {
             if (this.activeCategory === 'overview' || this.activeCategory === 'all') {
@@ -265,11 +274,13 @@ createApp({
             if (!this.hasActiveFilters) {
                 return category.definitions;
             }
-            const matchingIds = new Set(this.searchResults.map(definition => definition.id));
-            return category.definitions.filter(definition => matchingIds.has(definition.id));
+            return category.definitions.filter(definition => this.searchResultIds.has(definition.id));
         },
         getVisibleCount(category) {
-            return this.getFilteredDefinitions(category).length;
+            if (!this.hasActiveFilters) {
+                return category.definitions.length;
+            }
+            return this.searchResultCountsByCategory.get(category.name) || 0;
         },
         definitionById(definitionId) {
             return this.defsById[definitionId]?.def;

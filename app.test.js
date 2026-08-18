@@ -197,6 +197,31 @@ test('an XML lookup failure stays local to the initiating result', async () => {
     assert.match(state.rawXmlLoadError.message, /Raw XML not found/);
 });
 
+test('sidebar counts use the cached search state instead of re-filtering per category', () => {
+    const definitions = Array.from({ length: 500 }, (_, index) =>
+        definition(`item-${index}`, `Item${index}`, 'ThingDef')
+    );
+    const state = createState([
+        { name: 'ThingDef', definitions },
+        { name: 'RecipeDef', definitions: [definition('medicine', 'MakeMedicine', 'RecipeDef')] }
+    ]);
+
+    state.searchInput = 'item';
+    state.applySearch();
+
+    let filterCalls = 0;
+    const originalGetFiltered = state.getFilteredDefinitions;
+    state.getFilteredDefinitions = (...args) => {
+        filterCalls++;
+        return originalGetFiltered(...args);
+    };
+
+    assert.equal(state.getVisibleCount({ name: 'ThingDef' }), 500);
+    assert.equal(state.getVisibleCount({ name: 'RecipeDef' }), 0);
+    assert.equal(filterCalls, 0);
+    assert.deepEqual(Array.from(state.visibleCategories, category => category.name), ['ThingDef']);
+});
+
 test('Escape clears search when the XML drawer is closed', () => {
     const state = createState();
     let prevented = false;

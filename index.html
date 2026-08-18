@@ -523,7 +523,11 @@
                     </div>
                 </header>
                 <p class="sr-only" aria-live="polite">{{ copyStatus }}</p>
-                <div class="xml-display" v-html="formatXML(rawXmlFor(xmlDefinitionId))"></div>
+                <div class="xml-display"
+                     tabindex="0"
+                     role="region"
+                     aria-label="Source XML content, scrollable"
+                     v-html="formatXML(rawXmlFor(xmlDefinitionId))"></div>
             </aside>
         </div>
 
